@@ -5,7 +5,7 @@
 ---
 
 ## 1) High-level constraints
-- **Frontend**: React + TypeScript. Tailwind or equivalent CSS utility OK. Project must prioritize professional, polished styling. The UI **must not rely on scrolling**. Use a tabbed layout (see UI rules). No emojis.
+- **Frontend**: React + TypeScript with custom CSS utilities. Project must prioritize professional, polished styling. The UI **must not rely on scrolling**. Use a tabbed layout (see UI rules). No emojis.
 - **Backend**: FastAPI (Python). No authentication. Backend is a helper for listing runs and optional heavier derived computations. The frontend must be able to operate by directly reading the run JSON files during development.
 - **Runtime**: Windows development environment. Provide instructions and scripts to run everything inside a Python `venv`.
 - **Data source**: All runs live in `\\collections` (root relative). A **collection** contains multiple run JSON files. The app analyzes a single run at a time selected by the user.
@@ -62,7 +62,7 @@
 ---
 
 ## 3) UI & Visual rules (no scrolling; tabs only)
-- Layout: top header (run identity), then **tab bar** with the following tabs: **Overview**, **Metrics**, **Inspector**, **Chunks**.
+- Layout: top header (run identity), then **tab bar** with the following tabs: **Overview**, **Metrics**, **Question Inspector**, **Chunks**.
 - The current run (collection + run filename + timestamp) must be visible in the header at all times.
 - No vertical page scrolling: each tab is a fixed viewport panel. If content overflows, use internal, component-level scrolling confined to small scroll areas (not full page). Prefer paginated lists or collapsible sections.
 - Aesthetics: first priority. The app must look professional: clean typography, consistent spacing, subtle shadows and rounded corners, clear color palette and accessible contrasts. Designers/developers should invest in visual polish early (spacing, micro-interactions, legible fonts). Tabs should feel like a modern application — not a simple web page.
@@ -79,32 +79,42 @@
 
 ### B. Overview Tab (RunOverview)
 - Props: `run` object
-- Show grouped KPI cards: **Overall**, **Retriever**, **Generator** (map exact metric keys from run). Each KPI card shows the numeric value and on hover reveals a tooltip describing the metric and its raw value and normalized value.
-- Behavior: Cards are interactive but read-only. Do not include trend sparklines (unless real historical runs exist). The tab must render quickly and log success/failure.
+- **Experiment Summary**: Displays key statistics including total questions analyzed and total processing time in a clean, grid layout.
+- **Key Performance Metrics**: Shows the most important metrics (F1 Score, Faithfulness, Hallucination, Context Precision) as colored cards with progress bars. Each card includes the metric value as a percentage and goodness indicator.
+- **Metric Explanations**: Provides a dedicated section explaining what each metric means in plain language, helping users understand the significance of their results.
+- Behavior: Cards are visual indicators only (read-only). The tab renders quickly and focuses on providing a high-level overview of experiment performance.
 
 ### C. Metrics Tab (MetricsByQuestion)
 - Props: `run.results` and a `onSelectQuestion(query_id)` callback.
-- Chart required: **Grouped vertical bars** where:
+- **Chart**: "Performance Metrics Comparison Across Questions" - **Grouped vertical bars** where:
   - **X-axis**: discrete columns, one per question, labeled `Q{query_id} · {context_length}w` where `context_length` is the total word count of concatenated retrieved chunks for that question.
   - **Y-axis**: normalized metric goodness in the range [0,1]. Provide exact normalization rules (see section 5).
   - Bars grouped by metric; user can toggle which metrics are visible (checkboxes or legend toggles). Allow up to 6 metrics displayed at once for readability.
-- Interactions:
+- **Interactions**:
   - Hover on bar: show full question text and metric raw + normalized values.
-  - Click on a bar or question label: **switch to the Inspector tab** and open the selected question (do not scroll the page — switch tabs and focus the inspector view on that question).
-- Additional UI: show `context_length` and `num_chunks` for each question in a tooltip or small label under the X-axis tick.
+  - Click on a bar or question label: **switch to the Question Inspector tab** and open the selected question (do not scroll the page — switch tabs and focus the inspector view on that question).
+- **Additional UI**: show `context_length` and `num_chunks` for each question in a tooltip or small label under the X-axis tick.
 
-### D. Inspector Tab (QuestionInspector)
-- Props: `selectedQuestion` (a Question object)
-- Must display neatly (no scrolling across page): question metadata at top (ID, query text, #chunks, context length), then a compact metrics row (per-question metrics). Below: two columns listing GT claims and Response claims (compact cards) and a small mapping summary (counts of entailments/contradictions/neutrals). Expandable area: list of retrieved chunks with doc_id, word length and a snippet; each chunk expandable to show full text in a modal.
-- Actions: Export question JSON, toggle flags (UI-only) for retriever/generator issues. Emitting events for flagged items is sufficient.
+### D. Question Inspector Tab (QuestionInspector)
+- Props: `selectedQuestion` (a Question object), `allQuestions`, and `onSelectQuestion` callback
+- **Layout**: Clean, focused design without scrolling. Question selector dropdown at top-right for easy navigation.
+- **Three-Column Comparison**: Side-by-side display of:
+  - **User Query**: The original question with word count
+  - **Ground Truth Answer**: The expected correct answer with word count
+  - **System Response**: The generated answer with word count and difference comparison (±N vs GT)
+- **Retrieved Context**: Expandable/collapsible section showing all retrieved chunks. When expanded, displays full text of each chunk with document ID and word counts. When collapsed, shows summary message.
+- **Interactions**: Click question dropdown to switch between questions. Click "Expand" to view all retrieved context chunks in full detail.
+- **Focus**: Provides detailed forensic analysis of individual questions, comparing what the system generated vs. ground truth, with full access to the context that informed the response.
 
 ### E. Chunks Tab (ChunkAnalysis)
 - Props: `run.results`
-- Visualizations:
-  1. **Retrieval frequency histogram**: Y-axis = chunk identifier (doc_id); X-axis = times the chunk was retrieved across all questions in the chosen run. Sort descending. Hover shows doc_id, length, and small snippet; clicking shows list of question IDs where it appeared.
-  2. **Chunk length distribution**: histogram of chunk lengths in words (compute per unique chunk). Display average chunk length and count of unique chunks.
-  3. **Duplicate-chunk detector**: group chunks by exact normalized text (`text.trim().replace(/\s+/g,' ')`). Show groups with more than one distinct doc_id. Provide an exportable CSV of duplicate groups.
-- Controls: filter to show top-N most-frequently retrieved chunks.
+- **Summary Stats**: Three key metrics displayed at the top - Unique Chunks, Average Words/Chunk, and Duplicate Groups.
+- **View Selector**: Toggle between three analysis modes: Retrieval Frequency, Length Distribution, and Duplicates.
+- **Visualizations**:
+  1. **"Most Frequently Retrieved Chunks"**: Bar chart showing Y-axis = retrieval frequency, X-axis = chunk identifier (doc_id). Sort descending. Hover shows doc_id, length, and snippet; displays list of question IDs where it appeared.
+  2. **"Chunk Length Distribution"**: Bar chart histogram of chunk lengths in words (compute per unique chunk). Shows distribution of chunk sizes across the dataset.
+  3. **Duplicate Detection**: List view showing groups of chunks with identical text but different doc_ids. Provides exportable CSV of duplicate groups for further analysis.
+- **Controls**: Filter to show top-N most-frequently retrieved chunks (10/20/50 options).
 
 ---
 
