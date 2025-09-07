@@ -1,0 +1,61 @@
+{
+  "collection": "ELS (mit Protokolle)",
+  "timestamp": "22-08-25_15-27-09",
+  "file_origin": "Entwurf Fragenkatalog_Test-Set für RAG-System für IT-Großprojektverträge_vorläufg.xlsx",
+  "metrics": {
+    "overall_metrics": {
+      "precision": 12.1,
+      "recall": 10.1,
+      "f1": 8.3
+    },
+    "retriever_metrics": {
+      "claim_recall": 24.9,
+      "context_precision": 33.6
+    },
+    "generator_metrics": {
+      "context_utilization": 31.1,
+      "noise_sensitivity_in_relevant": 32.3,
+      "noise_sensitivity_in_irrelevant": 31.6,
+      "hallucination": 15,
+      "self_knowledge": 0,
+      "faithfulness": 75
+    }
+  },
+  "performance": {
+    "rag_retrieval_seconds": 191.83,
+    "rag_checker_processing_seconds": 105.5
+  },
+  "results": {
+    "results": [
+      {
+        "query_id": "1",
+        "query": "Welche Laufzeiten gelten für die Verträge?",
+        "gt_answer": "dasinzelabrufe, diese bleiben verbindlich und werden wie vereinbart fortgeführt",
+        "response": "xdxtvertragsdauer die Kündigung erklärt (  7 und 8sdaus der   mit der höchsten  ( 1).",
+        "retrieved_context": [
+          {
+            "doc_id": "IT_Großprojekte-+-Rahmenvertrag_KS_final-+-Anlage_5_Angebotsunterlagen_FRQ-+-K8_Projektabwicklung_Rev.3.3.pdf / <no-section>",
+            "text": "#### 3.1.2 Prozessphase 1: Projektinitiiierung..................16"
+          },
+          {
+            "doc_id": "IT_Großprojekte-+-Rahmenvertrag_KS_final-+-Anlage_1_Leistungsbeschreibung_inkl._Anlagen-+-20221125_Leistungsbeschreibung_LifeX_V501_ZPD.pdf / <no-section>",
+            "text": "# Leistungsbeschreibung  \n## 3.1.1 Ablauf der Phasen:"
+          }
+        ],
+        "metrics": {
+          "noise_sensitivity_in_relevant": 0.8,
+          "noise_sensitivity_in_irrelevant": 0,
+          "claim_recall": 0.5,
+          "context_precision": 0.7,
+          "recall": 0.0625,
+          "faithfulness": 1,
+          "hallucination": 0,
+          "self_knowledge": 0,
+          "precision": 0.2,
+          "f1": 0.09523809523809523,
+          "context_utilization": 0.125
+        }
+      }
+    ]
+  }
+}

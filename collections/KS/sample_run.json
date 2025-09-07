@@ -1,0 +1,182 @@
+{
+  "collection": "KS",
+  "timestamp": "24-07-25_11-55-54",
+  "file_origin": "sample_data.xlsx",
+  "metrics": {
+    "overall_metrics": {
+      "precision": 22.8,
+      "recall": 16.3,
+      "f1": 14.8
+    },
+    "retriever_metrics": {
+      "claim_recall": 29.7,
+      "context_precision": 21
+    },
+    "generator_metrics": {
+      "context_utilization": 26,
+      "noise_sensitivity_in_relevant": 23.5,
+      "noise_sensitivity_in_irrelevant": 29.7,
+      "hallucination": 14.7,
+      "self_knowledge": 0,
+      "faithfulness": 80.3
+    }
+  },
+  "performance": {
+    "rag_retrieval_seconds": 86.82,
+    "rag_checker_processing_seconds": 134.35
+  },
+  "results": [
+    {
+      "query_id": "1",
+      "query": "Welche Laufzeiten gelten für die Verträge?",
+      "gt_answer": "Die Verträge haben eine Mindestlaufzeit von 12 Monaten und verlängern sich automatisch um weitere 12 Monate, wenn nicht 3 Monate vor Ablauf gekündigt wird.",
+      "response": "Die Vertragslaufzeit beträgt normalerweise 24 Monate mit automatischer Verlängerung um 12 Monate.",
+      "retrieved_context": [
+        {
+          "doc_id": "EVB-IT_Systemvertrags_AGB.pdf / <no-section>",
+          "text": "Verträge haben eine Mindestlaufzeit von 12 Monaten. Die Verlängerung erfolgt automatisch um weitere 12 Monate, sofern nicht spätestens 3 Monate vor Ablauf der Laufzeit gekündigt wird."
+        },
+        {
+          "doc_id": "Allgemeine_Geschäftsbedingungen.pdf / Section 3",
+          "text": "Standard-Vertragslaufzeiten betragen 24 Monate für Neukunden und 12 Monate für Bestandskunden. Eine Kündigung muss schriftlich erfolgen."
+        },
+        {
+          "doc_id": "FAQ_Vertragsbedingungen.pdf / Laufzeiten",
+          "text": "Häufig gestellte Fragen zu Vertragslaufzeiten: Die meisten Verträge laufen über 12 oder 24 Monate, je nach Kundentyp."
+        }
+      ],
+      "response_claims": [
+        "Die Vertragslaufzeit beträgt normalerweise 24 Monate",
+        "Automatische Verlängerung um 12 Monate"
+      ],
+      "gt_answer_claims": [
+        "Mindestlaufzeit von 12 Monaten",
+        "Automatische Verlängerung um weitere 12 Monate",
+        "Kündigung 3 Monate vor Ablauf erforderlich"
+      ],
+      "retrieved2response": [
+        ["Contradiction", "Entailment"],
+        ["Entailment", "Entailment"],
+        ["Neutral", "Neutral"]
+      ],
+      "retrieved2answer": [
+        ["Entailment", "Entailment", "Entailment"],
+        ["Contradiction", "Neutral", "Neutral"],
+        ["Neutral", "Neutral", "Neutral"]
+      ],
+      "metrics": {
+        "hallucination": 0.5,
+        "self_knowledge": 0,
+        "context_utilization": 0.67,
+        "precision": 0.5,
+        "recall": 0.67,
+        "f1": 0.57,
+        "claim_recall": 0.67,
+        "context_precision": 0.67,
+        "noise_sensitivity_in_relevant": 0.2,
+        "noise_sensitivity_in_irrelevant": 0.1,
+        "faithfulness": 0.5
+      }
+    },
+    {
+      "query_id": "2",
+      "query": "Wie funktioniert die Kündigung von Verträgen?",
+      "gt_answer": "Die Kündigung muss schriftlich erfolgen und spätestens 3 Monate vor Vertragsende eingereicht werden. Eine Kündigung per E-Mail ist ebenfalls möglich.",
+      "response": "Kündigungen müssen schriftlich erfolgen, am besten per Brief oder Fax. Die Kündigungsfrist beträgt 1 Monat.",
+      "retrieved_context": [
+        {
+          "doc_id": "EVB-IT_Systemvertrags_AGB.pdf / Kündigung",
+          "text": "Kündigungen müssen in Textform erfolgen und können per Brief, Fax oder E-Mail eingereicht werden. Die Kündigungsfrist beträgt 3 Monate zum Vertragsende."
+        },
+        {
+          "doc_id": "Kundenservice_Leitfaden.pdf / Prozesse",
+          "text": "Für Kündigungen gelten folgende Regeln: schriftliche Form erforderlich, Eingang muss bestätigt werden, Frist von 3 Monaten einhalten."
+        }
+      ],
+      "response_claims": [
+        "Kündigungen müssen schriftlich erfolgen",
+        "Am besten per Brief oder Fax",
+        "Kündigungsfrist beträgt 1 Monat"
+      ],
+      "gt_answer_claims": [
+        "Kündigung muss schriftlich erfolgen",
+        "Spätestens 3 Monate vor Vertragsende",
+        "E-Mail Kündigung ist möglich"
+      ],
+      "retrieved2response": [
+        ["Entailment", "Neutral", "Contradiction"],
+        ["Entailment", "Neutral", "Contradiction"]
+      ],
+      "retrieved2answer": [
+        ["Entailment", "Entailment", "Entailment"],
+        ["Entailment", "Entailment", "Neutral"]
+      ],
+      "metrics": {
+        "hallucination": 0.33,
+        "self_knowledge": 0,
+        "context_utilization": 0.8,
+        "precision": 0.33,
+        "recall": 0.67,
+        "f1": 0.44,
+        "claim_recall": 1.0,
+        "context_precision": 1.0,
+        "noise_sensitivity_in_relevant": 0.1,
+        "noise_sensitivity_in_irrelevant": 0.05,
+        "faithfulness": 0.67
+      }
+    },
+    {
+      "query_id": "3",
+      "query": "Was sind die Kosten für zusätzliche Services?",
+      "gt_answer": "Zusätzliche Services werden nach Aufwand abgerechnet mit einem Stundensatz von 85€. Support-Pakete sind ab 200€/Monat verfügbar.",
+      "response": "Die Kosten variieren je nach Service. Standard-Support kostet 150€ pro Monat, Premium-Support 300€ pro Monat.",
+      "retrieved_context": [
+        {
+          "doc_id": "Preisliste_2024.pdf / Services",
+          "text": "Zusätzliche Services werden nach Stundenaufwand berechnet. Der Stundensatz beträgt 85€ zzgl. MwSt. Support-Pakete sind in verschiedenen Varianten verfügbar."
+        },
+        {
+          "doc_id": "Service_Angebote.pdf / Preise",
+          "text": "Unsere Support-Pakete: Basic 200€/Monat, Standard 350€/Monat, Premium 500€/Monat. Alle Preise verstehen sich zzgl. MwSt."
+        },
+        {
+          "doc_id": "Vertragsbedingungen_Services.pdf / Abrechnung",
+          "text": "Die Abrechnung zusätzlicher Leistungen erfolgt monatlich nachträglich basierend auf dem tatsächlichen Aufwand."
+        }
+      ],
+      "response_claims": [
+        "Die Kosten variieren je nach Service",
+        "Standard-Support kostet 150€ pro Monat",
+        "Premium-Support kostet 300€ pro Monat"
+      ],
+      "gt_answer_claims": [
+        "Zusätzliche Services nach Aufwand abgerechnet",
+        "Stundensatz von 85€",
+        "Support-Pakete ab 200€/Monat verfügbar"
+      ],
+      "retrieved2response": [
+        ["Entailment", "Neutral", "Neutral"],
+        ["Neutral", "Contradiction", "Contradiction"],
+        ["Neutral", "Neutral", "Neutral"]
+      ],
+      "retrieved2answer": [
+        ["Entailment", "Entailment", "Neutral"],
+        ["Neutral", "Neutral", "Entailment"],
+        ["Entailment", "Neutral", "Neutral"]
+      ],
+      "metrics": {
+        "hallucination": 0.67,
+        "self_knowledge": 0,
+        "context_utilization": 0.33,
+        "precision": 0.0,
+        "recall": 0.33,
+        "f1": 0.0,
+        "claim_recall": 0.67,
+        "context_precision": 0.33,
+        "noise_sensitivity_in_relevant": 0.4,
+        "noise_sensitivity_in_irrelevant": 0.3,
+        "faithfulness": 0.33
+      }
+    }
+  ]
+}
