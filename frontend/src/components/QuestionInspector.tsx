@@ -159,13 +159,20 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                       <div className="bg-gray-50 p-4 rounded-lg border border-gray-300">
                         <h5 className="font-semibold text-gray-900 mb-3">This Question Analysis</h5>
                         <div className="space-y-3 text-sm">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <div className="font-medium text-gray-800 mb-1">Total Relations:</div>
+                            <div className="text-gray-600 ml-3">
+                              GT: {(chunk.local_analysis?.local_gt_total || 0)} relations, Response: {(chunk.local_analysis?.local_response_total || 0)} relations
+                            </div>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-3">
                             {/* Ground Truth Sub-box */}
                             <div className="bg-gray-50 p-3 rounded border border-gray-300">
                               <div className="font-medium text-gray-800 mb-1">Ground Truth Relations:</div>
                               <div className="text-gray-600 ml-2 text-xs">
-                                {(chunk.local_analysis?.local_gt_entailments || 0)} Entailments, {(chunk.local_analysis?.local_gt_neutrals || 0)} Neutral, {(chunk.local_analysis?.local_gt_contradictions || 0)} Contradictions
-                                <div className="font-medium">Total: {(chunk.local_analysis?.local_gt_total || 0)} relations</div>
+                                {(chunk.local_analysis?.local_gt_entailments || 0)} Entailments, {(chunk.local_analysis?.local_gt_neutrals || 0)} Neutral, <span className={`${(chunk.local_analysis?.local_gt_contradictions || 0) > 0 ? 'text-red-600 font-medium' : ''}`}>{(chunk.local_analysis?.local_gt_contradictions || 0)} Contradictions</span>
+                                <div className="font-medium">Rate: {chunk.local_analysis?.local_gt_total ? ((chunk.local_analysis.local_gt_entailments / chunk.local_analysis.local_gt_total) * 100).toFixed(1) : 0}%</div>
                               </div>
                             </div>
                             
@@ -173,8 +180,8 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                             <div className="bg-gray-50 p-3 rounded border border-gray-300">
                               <div className="font-medium text-gray-800 mb-1">Response Relations:</div>
                               <div className="text-gray-600 ml-2 text-xs">
-                                {(chunk.local_analysis?.local_response_entailments || 0)} Entailments, {(chunk.local_analysis?.local_response_neutrals || 0)} Neutral, {(chunk.local_analysis?.local_response_contradictions || 0)} Contradictions
-                                <div className="font-medium">Total: {(chunk.local_analysis?.local_response_total || 0)} relations</div>
+                                {(chunk.local_analysis?.local_response_entailments || 0)} Entailments, {(chunk.local_analysis?.local_response_neutrals || 0)} Neutral, <span className={`${(chunk.local_analysis?.local_response_contradictions || 0) > 0 ? 'text-red-600 font-medium' : ''}`}>{(chunk.local_analysis?.local_response_contradictions || 0)} Contradictions</span>
+                                <div className="font-medium">Rate: {chunk.local_analysis?.local_response_total ? ((chunk.local_analysis.local_response_entailments / chunk.local_analysis.local_response_total) * 100).toFixed(1) : 0}%</div>
                               </div>
                             </div>
                           </div>
@@ -193,12 +200,12 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                               </div>
                             </div>
                             
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div className="grid grid-cols-2 gap-3">
                               {/* Ground Truth Sub-box */}
                               <div className="bg-gray-50 p-3 rounded border border-gray-300">
                                 <div className="font-medium text-gray-800 mb-1">Overall Ground Truth:</div>
                                 <div className="text-gray-600 ml-2 text-xs">
-                                  {chunk.effectiveness_analysis.gt_entailments} Entailments, {chunk.effectiveness_analysis.gt_neutrals} Neutral, {chunk.effectiveness_analysis.gt_contradictions} Contradictions
+                                  {chunk.effectiveness_analysis.gt_entailments} Entailments, {chunk.effectiveness_analysis.gt_neutrals} Neutral, <span className={`${chunk.effectiveness_analysis.gt_contradictions > 0 ? 'text-red-600 font-medium' : ''}`}>{chunk.effectiveness_analysis.gt_contradictions} Contradictions</span>
                                   <div className="font-medium">Rate: {(chunk.effectiveness_analysis.gt_entailment_rate * 100).toFixed(1)}%</div>
                                 </div>
                               </div>
@@ -207,7 +214,7 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                               <div className="bg-gray-50 p-3 rounded border border-gray-300">
                                 <div className="font-medium text-gray-800 mb-1">Overall Response:</div>
                                 <div className="text-gray-600 ml-2 text-xs">
-                                  {chunk.effectiveness_analysis.response_entailments} Entailments, {chunk.effectiveness_analysis.response_neutrals} Neutral, {chunk.effectiveness_analysis.response_contradictions} Contradictions
+                                  {chunk.effectiveness_analysis.response_entailments} Entailments, {chunk.effectiveness_analysis.response_neutrals} Neutral, <span className={`${chunk.effectiveness_analysis.response_contradictions > 0 ? 'text-red-600 font-medium' : ''}`}>{chunk.effectiveness_analysis.response_contradictions} Contradictions</span>
                                   <div className="font-medium">Rate: {(chunk.effectiveness_analysis.response_entailment_rate * 100).toFixed(1)}%</div>
                                 </div>
                               </div>
