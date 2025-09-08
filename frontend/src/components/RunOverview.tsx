@@ -10,6 +10,7 @@ interface MetricConfig {
   label: string;
   key: string;
   lowerIsBetter?: boolean;
+  tooltip: string;
 }
 
 const RunOverview: React.FC<RunOverviewProps> = ({ run }) => {
@@ -33,7 +34,8 @@ const RunOverview: React.FC<RunOverviewProps> = ({ run }) => {
     label: string;
     value: number;
     lowerIsBetter?: boolean;
-  }> = ({ label, value, lowerIsBetter }) => {
+    tooltip: string;
+  }> = ({ label, value, lowerIsBetter, tooltip }) => {
     const norm = normalize(value);
     const percent = Math.round(norm * 100);
     const color = calcColor(value, lowerIsBetter);
@@ -41,15 +43,20 @@ const RunOverview: React.FC<RunOverviewProps> = ({ run }) => {
     return (
       <div className="mb-4">
         <div className="flex items-center justify-between text-sm mb-1">
-          <span className="font-medium text-gray-700">{label}</span>
+          <span 
+            className="font-medium text-gray-700 cursor-help" 
+            title={tooltip}
+          >
+            {label}
+          </span>
           <span className="font-medium" style={{ color }}>{percent}%</span>
         </div>
-        <div className="w-full bg-red-200 h-10 border-2 border-black">
+        <div className="w-full bg-gray-200 h-6 rounded-lg overflow-hidden">
           <div
-            className="h-full bg-blue-500"
+            className="h-full transition-all duration-300 ease-in-out"
             style={{
-              width: `${Math.max(percent, 15)}%`,
-              minWidth: '40px'
+              width: `${percent}%`,
+              backgroundColor: color
             }}
           />
         </div>
@@ -68,29 +75,29 @@ const RunOverview: React.FC<RunOverviewProps> = ({ run }) => {
     {
       title: "Overall Metrics",
       metrics: [
-        { label: "Precision", key: "precision" },
-        { label: "Recall", key: "recall" },
-        { label: "F1 Score", key: "f1" },
+        { label: "Precision", key: "precision", tooltip: "Correctness of the response" },
+        { label: "Recall", key: "recall", tooltip: "Completeness of the response" },
+        { label: "F1 Score", key: "f1", tooltip: "Overall quality of the response" },
       ],
       data: run.metrics.overall_metrics,
     },
     {
       title: "Retriever Metrics",
       metrics: [
-        { label: "Claim Recall", key: "claim_recall" },
-        { label: "Context Precision", key: "context_precision" },
+        { label: "Claim Recall", key: "claim_recall", tooltip: "Claim-level recall by the retrieved context" },
+        { label: "Context Precision", key: "context_precision", tooltip: "Portion of relevant chunks in retrieved context" },
       ],
       data: run.metrics.retriever_metrics,
     },
     {
       title: "Generator Metrics",
       metrics: [
-        { label: "Context Utilization", key: "context_utilization" },
-        { label: "Noise Sensitivity (Relevant)", key: "noise_sensitivity_in_relevant", lowerIsBetter: true },
-        { label: "Noise Sensitivity (Irrelevant)", key: "noise_sensitivity_in_irrelevant", lowerIsBetter: true },
-        { label: "Hallucination", key: "hallucination", lowerIsBetter: true },
-        { label: "Self Knowledge", key: "self_knowledge" },
-        { label: "Faithfulness", key: "faithfulness" },
+        { label: "Context Utilization", key: "context_utilization", tooltip: "How effectively the generator uses relevant information in the context" },
+        { label: "Noise Sensitivity (Relevant)", key: "noise_sensitivity_in_relevant", lowerIsBetter: true, tooltip: "How much the generator influenced by noise in relevant chunks (lower is better)" },
+        { label: "Noise Sensitivity (Irrelevant)", key: "noise_sensitivity_in_irrelevant", lowerIsBetter: true, tooltip: "How much the generator influenced by noise in irrelevant chunks (lower is better)" },
+        { label: "Hallucination", key: "hallucination", lowerIsBetter: true, tooltip: "Incorrect information made up by the generator (lower is better)" },
+        { label: "Self Knowledge", key: "self_knowledge", lowerIsBetter: true, tooltip: "Use of the model's own knowledge instead of the context (whether lower is better depends on user's preference)" },
+        { label: "Faithfulness", key: "faithfulness", tooltip: "How well the generator sticks to the retrieved context" },
       ],
       data: run.metrics.generator_metrics,
     },
@@ -126,6 +133,7 @@ const RunOverview: React.FC<RunOverviewProps> = ({ run }) => {
                   label={m.label}
                   value={section.data[m.key]}
                   lowerIsBetter={m.lowerIsBetter}
+                  tooltip={m.tooltip}
                 />
               ))}
             </div>
