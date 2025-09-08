@@ -56,8 +56,14 @@ code {
 .py-6 { padding-top: 1.5rem; padding-bottom: 1.5rem; }
 .mb-4 { margin-bottom: 1rem; }
 .mb-6 { margin-bottom: 1.5rem; }
+.mb-8 { margin-bottom: 2rem; }
 .mt-1 { margin-top: 0.25rem; }
+.mt-8 { margin-top: 2rem; }
 .ml-8 { margin-left: 2rem; }
+.pb-6 { padding-bottom: 1.5rem; }
+.pt-6 { padding-top: 1.5rem; }
+.border-t { border-top-width: 1px; }
+.border-b { border-bottom-width: 1px; }
 
 .flex { display: flex; }
 .items-center { align-items: center; }
@@ -128,6 +134,7 @@ code {
 .w-full { width: 100%; }
 .rounded-full { border-radius: 9999px; }
 .h-2 { height: 0.5rem; }
+.h-3 { height: 0.75rem; }
 .h-6 { height: 1.5rem; }
 .h-full { height: 100%; }
 .bg-gray-200 { background-color: #e5e7eb; }

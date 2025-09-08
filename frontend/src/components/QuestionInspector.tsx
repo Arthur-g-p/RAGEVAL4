@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Question } from '../types';
 import { logger } from '../utils/logger';
+import MetricsDisplay from './MetricsDisplay';
 
 interface QuestionInspectorProps {
   question: Question;
@@ -22,6 +23,30 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
   };
 
   const wordDiff = getWordDifference();
+
+  // Transform question metrics into the structure expected by MetricsDisplay
+  const getQuestionMetrics = () => {
+    const metrics = question.metrics || {};
+    return {
+      overall_metrics: {
+        precision: metrics.precision || 0,
+        recall: metrics.recall || 0,
+        f1: metrics.f1 || 0,
+      },
+      retriever_metrics: {
+        claim_recall: metrics.claim_recall || 0,
+        context_precision: metrics.context_precision || 0,
+      },
+      generator_metrics: {
+        context_utilization: metrics.context_utilization || 0,
+        noise_sensitivity_in_relevant: metrics.noise_sensitivity_in_relevant || 0,
+        noise_sensitivity_in_irrelevant: metrics.noise_sensitivity_in_irrelevant || 0,
+        hallucination: metrics.hallucination || 0,
+        self_knowledge: metrics.self_knowledge || 0,
+        faithfulness: metrics.faithfulness || 0,
+      },
+    };
+  };
 
   return (
     <div className="p-6">
@@ -47,7 +72,7 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8 pb-6 border-b border-gray-200">
         <div className="border p-6 rounded-lg">
           <h3 className="text-lg font-semibold mb-3">User Query</h3>
           <div className="bg-gray-50 p-4 rounded border">
@@ -80,6 +105,17 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
             {wordDiff > 0 ? ` +${wordDiff}` : wordDiff < 0 ? ` ${wordDiff}` : ' ±0'} vs GT
           </div>
         </div>
+      </div>
+
+      {/* Question Metrics Section */}
+      <div className="bg-white border rounded-lg p-6 mb-8">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Metric Performance</h3>
+        <MetricsDisplay
+          title={`Question ${question.query_id} - Metric Performance`}
+          subtitle="Individual question evaluation metrics"
+          metrics={getQuestionMetrics()}
+          showHeader={false}
+        />
       </div>
 
       {question.retrieved_context && question.retrieved_context.length > 0 && (
