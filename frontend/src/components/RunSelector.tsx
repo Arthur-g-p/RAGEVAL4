@@ -124,21 +124,24 @@ const RunSelector: React.FC<RunSelectorProps> = ({ onRunLoaded }) => {
       setLoadingDetails('Validating data structure...');
       const runData = validateAndNormalizeRunData(rawData);
       
-      setLoadingDetails('Processing questions...');
-      // Add derived metrics
-      for (const question of runData.results) {
-        if (question.retrieved_context) {
-          const contextText = question.retrieved_context.map(chunk => chunk.text).join(' ');
-          question.context_length = contextText.split(/\s+/).length;
-          question.num_chunks = question.retrieved_context.length;
-        } else {
-          question.context_length = 0;
-          question.num_chunks = 0;
-        }
+      setLoadingDetails('Computing effectiveness analysis...');
+      // Call backend /derive endpoint for advanced metrics calculation
+      const deriveResponse = await fetch('http://127.0.0.1:8000/derive', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(runData),
+      });
+      
+      if (!deriveResponse.ok) {
+        throw new Error(`Failed to compute metrics: HTTP ${deriveResponse.status}`);
       }
+      
+      const enhancedRunData = await deriveResponse.json();
 
       setLoadingDetails('Finalizing...');
-      onRunLoaded(runData);
+      onRunLoaded(enhancedRunData);
       logger.info(`Successfully loaded run: ${selectedCollection}/${selectedRun} (${runData.results.length} questions)`);
       
     } catch (error) {

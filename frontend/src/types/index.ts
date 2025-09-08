@@ -46,6 +46,32 @@ export interface Question {
 export interface RetrievedChunk {
   doc_id: string;
   text: string;
+  effectiveness_analysis?: {
+    total_appearances: number;
+    questions_appeared: string[];
+    frequency_rank: number;
+    total_unique_chunks: number;
+    gt_entailments: number;
+    gt_neutrals: number;
+    gt_contradictions: number;
+    response_entailments: number;
+    response_neutrals: number;
+    response_contradictions: number;
+    total_gt_relations: number;
+    total_response_relations: number;
+    gt_entailment_rate: number;
+    response_entailment_rate: number;
+  };
+  local_analysis?: {
+    local_gt_entailments: number;
+    local_gt_neutrals: number;
+    local_gt_contradictions: number;
+    local_gt_total: number;
+    local_response_entailments: number;
+    local_response_neutrals: number;
+    local_response_contradictions: number;
+    local_response_total: number;
+  };
 }
 
 export interface CollectionData {
