@@ -1,0 +1,130 @@
+import React, { useState } from 'react';
+import { Question } from '../types';
+import { logger } from '../utils/logger';
+
+interface QuestionInspectorProps {
+  question: Question;
+  allQuestions?: Question[];
+  onSelectQuestion?: (queryId: string) => void;
+}
+
+const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQuestions, onSelectQuestion }) => {
+  const [isContextExpanded, setIsContextExpanded] = useState(false);
+
+  React.useEffect(() => {
+    logger.info(`QuestionInspector rendered for question ${question.query_id}`);
+  }, [question.query_id]);
+
+  const getWordDifference = () => {
+    const responseWords = question.response.split(/\s+/).length;
+    const gtWords = question.gt_answer ? question.gt_answer.split(/\s+/).length : 0;
+    return gtWords > 0 ? responseWords - gtWords : 0;
+  };
+
+  const wordDiff = getWordDifference();
+
+  return (
+    <div className="p-6">
+      <div className="mb-6">
+        <div className="flex justify-between items-start mb-4">
+          <h2 className="text-2xl font-bold text-gray-900">Question Inspector</h2>
+          {allQuestions && onSelectQuestion && (
+            <select
+              value={question.query_id}
+              onChange={(e) => onSelectQuestion(e.target.value)}
+              className="block w-64 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500"
+            >
+              {allQuestions.map((q) => (
+                <option key={q.query_id} value={q.query_id}>
+                  Q{q.query_id}: {q.query.length > 50 ? q.query.substring(0, 50) + '...' : q.query}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+        <div className="text-sm text-gray-600">
+          Question ID: <span className="font-medium">{question.query_id}</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <div className="border p-6 rounded-lg">
+          <h3 className="text-lg font-semibold mb-3">User Query</h3>
+          <div className="bg-gray-50 p-4 rounded border">
+            <p className="text-gray-800 leading-relaxed">{question.query}</p>
+          </div>
+          <div className="mt-3 text-sm text-gray-600">
+            Length: {question.query.split(/\s+/).length} words
+          </div>
+        </div>
+
+        <div className="border p-6 rounded-lg">
+          <h3 className="text-lg font-semibold mb-3">Ground Truth Answer</h3>
+          <div className="bg-gray-50 p-4 rounded border">
+            <p className="text-gray-800 leading-relaxed">
+              {question.gt_answer || 'No ground truth answer available'}
+            </p>
+          </div>
+          <div className="mt-3 text-sm text-gray-600">
+            Length: {question.gt_answer ? question.gt_answer.split(/\s+/).length : 0} words
+          </div>
+        </div>
+
+        <div className="border p-6 rounded-lg">
+          <h3 className="text-lg font-semibold mb-3">System Response</h3>
+          <div className="bg-gray-50 p-4 rounded border">
+            <p className="text-gray-800 leading-relaxed">{question.response}</p>
+          </div>
+          <div className="mt-3 text-sm text-gray-600">
+            Length: {question.response.split(/\s+/).length} words • 
+            {wordDiff > 0 ? ` +${wordDiff}` : wordDiff < 0 ? ` ${wordDiff}` : ' ±0'} vs GT
+          </div>
+        </div>
+      </div>
+
+      {question.retrieved_context && question.retrieved_context.length > 0 && (
+        <div className="bg-white border rounded-lg p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">
+              Retrieved Context ({question.retrieved_context.length} chunks)
+            </h3>
+            <button
+              onClick={() => setIsContextExpanded(!isContextExpanded)}
+              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+            >
+              {isContextExpanded ? 'Collapse' : 'Expand'}
+            </button>
+          </div>
+          
+          {isContextExpanded && (
+            <div className="space-y-3">
+              {question.retrieved_context.map((chunk, index) => (
+                <div key={index} className="bg-gray-50 p-4 rounded-lg border">
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="font-medium text-sm text-gray-700">
+                      Chunk {index + 1}: {chunk.doc_id}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {chunk.text.split(/\s+/).length} words
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-2 whitespace-pre-wrap">
+                    {chunk.text}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          {!isContextExpanded && (
+            <div className="text-sm text-gray-600">
+              Click "Expand" to view all retrieved context chunks
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default QuestionInspector;
