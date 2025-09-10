@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Question } from '../types';
 import { logger } from '../utils/logger';
 
@@ -37,12 +37,67 @@ interface EnhancedChunkData {
   response_entailment_rate: number;
 }
 
+// Reusable tooltip card for chunk info (used by both charts)
+const ChunkTooltipCard: React.FC<{ chunk: EnhancedChunkData }> = ({ chunk }) => {
+  const safeDocId = String(chunk.doc_id || 'Unknown');
+  const safeText = String(chunk.text || '');
+  const truncated = safeText.length > 50 ? safeText.substring(0, 50) + '…' : safeText;
+  const safeFrequency = Number(chunk.frequency) || 0;
+  const safeWordCount = Number(chunk.wordCount) || 0;
+  const safeRank = Number(chunk.frequency_rank) || 0;
+  const safeQuestions = Array.isArray(chunk.questions) ? chunk.questions : [];
+
+  const gt = {
+    e: Number(chunk.gt_entailments) || 0,
+    n: Number(chunk.gt_neutrals) || 0,
+    c: Number(chunk.gt_contradictions) || 0,
+  };
+  const resp = {
+    e: Number(chunk.response_entailments) || 0,
+    n: Number(chunk.response_neutrals) || 0,
+    c: Number(chunk.response_contradictions) || 0,
+  };
+
+  return (
+    <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg max-w-sm">
+      <p className="font-semibold text-gray-900">{safeDocId}</p>
+      <p className="text-xs text-gray-600 mb-2">{truncated}</p>
+      <div className="text-xs space-y-1">
+        <div>Frequency: <span className="font-medium">{safeFrequency}</span></div>
+        <div>Word Count: <span className="font-medium">{safeWordCount}</span></div>
+        <div>Rank: <span className="font-medium">#{safeRank}</span></div>
+        <div className="grid grid-cols-1 gap-1 pt-1">
+          <div className="flex items-center gap-2">
+            <span className="text-gray-700 min-w-10">GT:</span>
+            <span className="text-green-600">E {gt.e}</span>
+            <span className="text-gray-500">N {gt.n}</span>
+            <span className="text-red-600">C {gt.c}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-gray-700 min-w-10">Resp:</span>
+            <span className="text-green-600">E {resp.e}</span>
+            <span className="text-gray-500">N {resp.n}</span>
+            <span className="text-red-600">C {resp.c}</span>
+          </div>
+        </div>
+        <div className="pt-1">
+          <div className="text-gray-600">Questions:</div>
+          <div className="text-gray-500 text-xs break-words">{safeQuestions.join(', ')}</div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
   const [topN, setTopN] = useState<number>(20);
   const [selectedView, setSelectedView] = useState<'frequency' | 'length' | 'duplicates'>('frequency');
   const [analysisMode, setAnalysisMode] = useState<'retrieved2answer' | 'retrieved2response'>('retrieved2answer');
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
   const [sortBy, setSortBy] = useState<'frequency' | 'contradictions' | 'neutrals' | 'entailments'>('frequency');
+  const [activeFreqIndex, setActiveFreqIndex] = useState<number | null>(null);
+  const [activeEntIndex, setActiveEntIndex] = useState<number | null>(null);
+  const [showPercent, setShowPercent] = useState<boolean>(false);
 
   React.useEffect(() => {
     logger.info('ChunkAnalysis rendered successfully');
@@ -172,6 +227,8 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
   }, [questions, topN]);
 
   // Prepare data for stacked bar chart and expandable section
+  const toSafeId = (s: string) => String(s || '').substring(0, 80).replace(/[^a-zA-Z0-9\-_]/g, '_');
+
   const chartData = useMemo(() => {
     if (!enhancedChunkData || !Array.isArray(enhancedChunkData) || enhancedChunkData.length === 0) {
       console.warn('No enhancedChunkData available for entailment chart');
@@ -182,6 +239,26 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
       // Validate topN to prevent crashes
       const validTopN = Math.max(1, Math.min(Number(topN) || 20, 1000));
       
+      const scoreOf = (c: EnhancedChunkData) => {
+        switch (sortBy) {
+          case 'contradictions':
+            return analysisMode === 'retrieved2answer' 
+              ? (Number(c.gt_contradictions) || 0)
+              : (Number(c.response_contradictions) || 0);
+          case 'neutrals':
+            return analysisMode === 'retrieved2answer' 
+              ? (Number(c.gt_neutrals) || 0)
+              : (Number(c.response_neutrals) || 0);
+          case 'entailments':
+            return analysisMode === 'retrieved2answer' 
+              ? (Number(c.gt_entailments) || 0)
+              : (Number(c.response_entailments) || 0);
+          case 'frequency':
+          default:
+            return Number(c.frequency) || 0;
+        }
+      };
+
       const sortedChunks = [...enhancedChunkData]
         .filter(chunk => {
           // Comprehensive validation
@@ -195,11 +272,7 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
                  Number.isFinite(chunk.frequency) &&
                  chunk.frequency >= 0;
         })
-        .sort((a, b) => {
-          const freqA = Number(a.frequency) || 0;
-          const freqB = Number(b.frequency) || 0;
-          return freqB - freqA;
-        })
+        .sort((a, b) => scoreOf(b) - scoreOf(a))
         .slice(0, validTopN);
         
       if (sortedChunks.length === 0) {
@@ -219,12 +292,17 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
           Math.max(0, Number(chunk.gt_contradictions) || 0) : 
           Math.max(0, Number(chunk.response_contradictions) || 0);
           
-        const safeDocId = String(chunk.doc_id || `chunk-${index}`).substring(0, 20).replace(/[^a-zA-Z0-9\-_]/g, '_');
+        const safeDocId = toSafeId(String(chunk.doc_id || `chunk-${index}`));
         
         // Ensure all values are valid numbers
         const validEntailments = Number.isFinite(entailments) ? entailments : 0;
         const validNeutrals = Number.isFinite(neutrals) ? neutrals : 0;
         const validContradictions = Number.isFinite(contradictions) ? contradictions : 0;
+        const totals = validEntailments + validNeutrals + validContradictions;
+
+        const entVal = showPercent && totals > 0 ? validEntailments / totals : validEntailments;
+        const neuVal = showPercent && totals > 0 ? validNeutrals / totals : validNeutrals;
+        const conVal = showPercent && totals > 0 ? validContradictions / totals : validContradictions;
         
         // Use a unique key for the X domain to avoid duplicate categories
         const xKey = `${safeDocId}-${index}`;
@@ -233,10 +311,10 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
           id: `chunk-${index}`,
           xKey,
           doc_label: safeDocId,
-          entailments: validEntailments,
-          neutrals: validNeutrals,
-          contradictions: validContradictions,
-          total: validEntailments + validNeutrals + validContradictions,
+          entailments: entVal,
+          neutrals: neuVal,
+          contradictions: conVal,
+          total: totals,
           chunk: chunk
         };
       }).filter(item => 
@@ -256,7 +334,7 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
       console.error('Error preparing entailment chart data:', error);
       return [];
     }
-  }, [enhancedChunkData, topN, analysisMode]);
+  }, [enhancedChunkData, topN, analysisMode, sortBy, showPercent]);
 
   // Prepare frequency chart data with proper memoization
   const frequencyChartData = useMemo(() => {
@@ -289,9 +367,7 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
         })
         .slice(0, validTopN)
         .map((chunk, index) => {
-          const safeDocId = String(chunk.doc_id || `chunk-${index}`)
-            .substring(0, 30)
-            .replace(/[^a-zA-Z0-9\-_]/g, '_');
+          const safeDocId = toSafeId(String(chunk.doc_id || `chunk-${index}`));
           const safeFrequency = Math.max(0, Number(chunk.frequency) || 0);
           const safeWordCount = Math.max(0, Number(chunk.wordCount) || 0);
           
@@ -342,12 +418,13 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
   }, [frequencyChartData]);
 
   const entailmentYDomain = useMemo<[number, number]>(() => {
+    if (showPercent) return [0, 1];
     const max = Array.isArray(chartData)
       ? chartData.reduce((m, d: any) => Math.max(m, Number(d?.total) || 0), 0)
       : 0;
     const upper = max > 0 ? Math.max(1, Math.ceil(max * 1.1)) : 1;
     return [0, upper];
-  }, [chartData]);
+  }, [chartData, showPercent]);
 
   const entailmentXDomain = useMemo<string[]>(() => {
     if (!Array.isArray(chartData)) return [];
@@ -410,6 +487,44 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
       return [];
     }
   }, [enhancedChunkData, sortBy, analysisMode]);
+
+  const handleJumpToChunk = (opts: { docId?: string; frequencyRank?: number }) => {
+    try {
+      setIsExpanded(true);
+      // wait for expand render
+      setTimeout(() => {
+        const safeDoc = toSafeId(opts.docId || '');
+        const rank = opts.frequencyRank != null ? String(opts.frequencyRank) : '';
+        const candidates: Element[] = [];
+        if (safeDoc && rank) {
+          document.querySelectorAll(`[data-docid="${safeDoc}"][data-rank="${rank}"]`).forEach(el => candidates.push(el));
+        }
+        if (candidates.length === 0 && safeDoc) {
+          document.querySelectorAll(`[data-docid="${safeDoc}"]`).forEach(el => candidates.push(el));
+        }
+        const target = candidates[0] as HTMLElement | undefined;
+        if (target && typeof target.scrollIntoView === 'function') {
+          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          target.classList.add('ring-2', 'ring-blue-500');
+          setTimeout(() => target.classList.remove('ring-2', 'ring-blue-500'), 1500);
+        }
+      }, 80);
+    } catch (e) {
+      console.warn('Failed to jump to chunk', e);
+    }
+  };
+
+  const handleBarClick = (payload: any) => {
+    try {
+      const p = payload?.payload || payload;
+      const raw = p?.chunk;
+      const docId = raw?.doc_id || p?.doc_label;
+      const freqRank = raw?.frequency_rank;
+      handleJumpToChunk({ docId, frequencyRank: typeof freqRank === 'number' ? freqRank : undefined });
+    } catch (e) {
+      console.warn('Bar click handler failed', e);
+    }
+  };
 
   const exportDuplicatesCSV = () => {
     const csvContent = duplicateGroups
@@ -498,9 +613,9 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
           </div>
 
           {/* Chunk Frequency Ranking Chart */}
-          <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6" style={{ height: '400px' }}>
+          <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6 relative overflow-hidden" style={{ height: '400px' }}>
             <h3 className="text-lg font-semibold text-center mb-4 text-gray-800">
-              Chunk Frequency Ranking
+              Total Chunk Frequency Ranking
             </h3>
             {Array.isArray(frequencyChartData) && frequencyChartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
@@ -535,50 +650,34 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
                     allowDataOverflow={false}
                   />
                   <Tooltip 
+                    cursor={false}
                     formatter={(value, name) => {
                       const safeValue = Number(value) || 0;
                       return [safeValue, 'Frequency'];
                     }}
-                    labelFormatter={(label) => `${String(label || 'Unknown')}`}
-                    content={({ active, payload, label }) => {
+                    labelFormatter={() => ''}
+                    content={({ active, payload }) => {
                       try {
-                        if (active && payload && payload.length && payload[0]?.payload) {
-                          const data = payload[0].payload;
-                          const chunk = data?.chunk;
-                          if (!chunk) return null;
-                          
-                          const safeDocId = String(chunk.doc_id || 'Unknown');
-                          const safeText = String(chunk.text || '');
-                          const safeFrequency = Number(chunk.frequency) || 0;
-                          const safeWordCount = Number(chunk.wordCount) || 0;
-                          const safeRank = Number(chunk.frequency_rank) || 0;
-                          const safeQuestions = Array.isArray(chunk.questions) ? chunk.questions : [];
-                          
-                          return (
-                            <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg max-w-sm">
-                              <p className="font-semibold text-gray-900">{safeDocId}</p>
-                              <p className="text-xs text-gray-600 mb-2">
-                                {safeText.length > 100 ? safeText.substring(0, 100) + '...' : safeText}
-                              </p>
-                              <div className="text-xs space-y-1">
-                                <div>Frequency: <span className="font-medium">{safeFrequency}</span></div>
-                                <div>Word Count: <span className="font-medium">{safeWordCount}</span></div>
-                                <div>Rank: <span className="font-medium">#{safeRank}</span></div>
-                                <div className="pt-1">
-                                  <div className="text-gray-600">Questions:</div>
-                                  <div className="text-gray-500 text-xs">{safeQuestions.join(', ')}</div>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        }
+                        const chunk = active && payload && payload.length ? payload[0]?.payload?.chunk : null;
+                        return chunk ? <ChunkTooltipCard chunk={chunk} /> : null;
                       } catch (error) {
                         console.warn('Error rendering frequency tooltip:', error);
+                        return null;
                       }
-                      return null;
                     }}
                   />
-                  <Bar dataKey="frequency" fill="#3B82F6" isAnimationActive={false} />
+                  <Bar 
+                    dataKey="frequency" 
+                    fill="#3B82F6" 
+                    isAnimationActive={false}
+                    onMouseLeave={() => setActiveFreqIndex(null)}
+                    onMouseMove={(data: any, index: number) => setActiveFreqIndex(index)}
+                    onClick={(data: any) => handleBarClick(data)}
+                  >
+                    {frequencyChartData.map((entry: any, index: number) => (
+                      <Cell key={`cell-freq-${index}`} fill={activeFreqIndex === index ? '#1D4ED8' : '#3B82F6'} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -592,37 +691,82 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
           </div>
 
           {/* Analysis Mode Selector */}
-          <div className="mb-4 flex justify-center">
-            <div className="flex items-center space-x-4 bg-gray-50 p-3 rounded-lg border border-gray-200">
-              <span className="text-sm font-medium text-gray-700">Entailment Analysis Mode:</span>
-              <label className="flex items-center">
+            <div className="mb-4 flex justify-center">
+              <fieldset className="inline-flex items-center bg-gray-50 p-1 rounded-lg border border-gray-200 relative z-10 pointer-events-auto" role="radiogroup" aria-label="Entailment Analysis Mode">
+                <legend className="sr-only">Entailment Analysis Mode</legend>
                 <input
+                  id="mode-gt"
                   type="radio"
+                  name="analysisMode"
                   value="retrieved2answer"
                   checked={analysisMode === 'retrieved2answer'}
                   onChange={(e) => setAnalysisMode(e.target.value as any)}
-                  className="mr-2"
+                  className="sr-only"
                 />
-                <span className="text-sm text-gray-700">Ground Truth</span>
-              </label>
-              <label className="flex items-center">
+                <label
+                  htmlFor="mode-gt"
+                  className={`px-4 py-2 text-sm rounded-md cursor-pointer ${analysisMode === 'retrieved2answer' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-200'}`}
+                >
+                  Ground Truth
+                </label>
                 <input
+                  id="mode-resp"
                   type="radio"
+                  name="analysisMode"
                   value="retrieved2response"
                   checked={analysisMode === 'retrieved2response'}
                   onChange={(e) => setAnalysisMode(e.target.value as any)}
-                  className="mr-2"
+                  className="sr-only"
                 />
-                <span className="text-sm text-gray-700">Response</span>
-              </label>
+                <label
+                  htmlFor="mode-resp"
+                  className={`px-4 py-2 text-sm rounded-md cursor-pointer ${analysisMode === 'retrieved2response' ? 'bg-blue-600 text-white' : 'text-gray-700 hover:bg-gray-200'}`}
+                >
+                  Response
+                </label>
+              </fieldset>
             </div>
-          </div>
 
           {/* Stacked Bar Chart */}
-          <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6" style={{ height: '500px' }}>
-            <h3 className="text-lg font-semibold text-center mb-4 text-gray-800">
-              Entailment Analysis - {analysisMode === 'retrieved2answer' ? 'Ground Truth' : 'Response'}
-            </h3>
+          <h3 className="text-lg font-semibold text-center text-gray-800">
+            Entailment Analysis - {analysisMode === 'retrieved2answer' ? 'Ground Truth' : 'Response'}
+          </h3>
+          <p className="text-center text-gray-500 text-xs mt-1 mb-2">
+            This chart shows, for each retrieved chunk, how often it agrees with, is neutral to, or contradicts the chosen target (Ground Truth or Response).
+            Use the toggle to switch the target. Sort the bars to focus on frequency or specific relation types. Switch to Percent to compare quality independent of volume.
+            Click a bar to jump to the detailed card below.
+          </p>
+          <div className="flex items-center justify-between mb-2 relative z-10 pointer-events-auto">
+            <div className="text-xs text-gray-500">
+              Showing top {topN} by {sortBy} in {analysisMode === 'retrieved2answer' ? 'Ground Truth' : 'Response'} mode.
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-gray-700">Sort by:</label>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="rounded border-gray-300 text-sm"
+              >
+                <option value="frequency">Frequency (Rank)</option>
+                <option value="contradictions">Total Contradictions</option>
+                <option value="neutrals">Total Neutrals</option>
+                <option value="entailments">Total Entailments</option>
+              </select>
+              <div className="inline-flex rounded-md overflow-hidden border border-gray-300">
+                <button
+                  type="button"
+                  onClick={() => setShowPercent(false)}
+                  className={`px-2 py-1 text-xs ${!showPercent ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'}`}
+                >Counts</button>
+                <button
+                  type="button"
+                  onClick={() => setShowPercent(true)}
+                  className={`px-2 py-1 text-xs ${showPercent ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'}`}
+                >Percent</button>
+              </div>
+            </div>
+          </div>
+          <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6 relative overflow-hidden" style={{ height: '500px' }}>
             {Array.isArray(chartData) && chartData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
@@ -651,10 +795,12 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
                   />
                   <YAxis 
                     domain={entailmentYDomain}
+                    tickFormatter={(v: number) => showPercent ? `${Math.round(Number(v) * 100)}%` : String(v)}
                     allowDecimals={false}
                     allowDataOverflow={false}
                   />
                   <Tooltip 
+                    cursor={false}
                     formatter={(value, name) => {
                       const safeValue = Number(value) || 0;
                       const safeName = String(name || 'Unknown');
@@ -663,36 +809,53 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
                     labelFormatter={() => ''}
                     content={({ active, payload }) => {
                       try {
-                        if (active && payload && payload.length) {
-                          const d: any = payload[0]?.payload;
-                          const docLabel = d?.doc_label || d?.xKey || 'Unknown';
-                          return (
-                            <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg">
-                              <p className="font-semibold text-gray-900">Chunk: {docLabel}</p>
-                              <div className="text-sm space-y-1">
-                                {payload.map((entry, index) => {
-                                  const value = Number(entry.value) || 0;
-                                  const name = String(entry.name || 'Unknown');
-                                  const color = entry.color || '#000000';
-                                  return (
-                                    <div key={index} style={{ color }}>
-                                      {name}: {value}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        }
+                        const chunk = active && payload && payload.length ? payload[0]?.payload?.chunk : null;
+                        return chunk ? <ChunkTooltipCard chunk={chunk} /> : null;
                       } catch (error) {
                         console.warn('Error rendering entailment tooltip:', error);
+                        return null;
                       }
-                      return null;
                     }}
                   />
-                  <Bar dataKey="entailments" stackId="a" fill="#10B981" isAnimationActive={false} />
-                  <Bar dataKey="neutrals" stackId="a" fill="#F59E0B" isAnimationActive={false} />
-                  <Bar dataKey="contradictions" stackId="a" fill="#EF4444" isAnimationActive={false} />
+                  <Bar 
+                    dataKey="entailments" 
+                    stackId="a" 
+                    fill="#10B981" 
+                    isAnimationActive={false}
+                    onMouseLeave={() => setActiveEntIndex(null)}
+                    onMouseMove={(data: any, index: number) => setActiveEntIndex(index)}
+                    onClick={(data: any) => handleBarClick(data)}
+                  >
+                    {chartData.map((_, index: number) => (
+                      <Cell key={`cell-ent-${index}`} fill={activeEntIndex === index ? '#059669' : '#10B981'} />
+                    ))}
+                  </Bar>
+                  <Bar 
+                    dataKey="neutrals" 
+                    stackId="a" 
+                    fill="#9CA3AF" 
+                    isAnimationActive={false}
+                    onMouseLeave={() => setActiveEntIndex(null)}
+                    onMouseMove={(data: any, index: number) => setActiveEntIndex(index)}
+                    onClick={(data: any) => handleBarClick(data)}
+                  >
+                    {chartData.map((_, index: number) => (
+                      <Cell key={`cell-neu-${index}`} fill={activeEntIndex === index ? '#6B7280' : '#9CA3AF'} />
+                    ))}
+                  </Bar>
+                  <Bar 
+                    dataKey="contradictions" 
+                    stackId="a" 
+                    fill="#EF4444" 
+                    isAnimationActive={false}
+                    onMouseLeave={() => setActiveEntIndex(null)}
+                    onMouseMove={(data: any, index: number) => setActiveEntIndex(index)}
+                    onClick={(data: any) => handleBarClick(data)}
+                  >
+                    {chartData.map((_, index: number) => (
+                      <Cell key={`cell-con-${index}`} fill={activeEntIndex === index ? '#B91C1C' : '#EF4444'} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -707,7 +870,7 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
 
           {/* Expandable Detailed Section */}
           <div className="bg-white border border-gray-200 rounded-lg p-4">
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex justify-between items-center mb-4 relative z-10 pointer-events-auto">
               <h3 className="text-lg font-semibold text-gray-900">Detailed Chunk Analysis</h3>
               <button
                 onClick={() => setIsExpanded(!isExpanded)}
@@ -721,25 +884,12 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
               <div>
                 {sortedChunkData.length > 0 ? (
                   <div>
-                    {/* Sort Controls */}
-                    <div className="mb-4 flex items-center space-x-4">
-                      <span className="text-sm font-medium text-gray-700">Sort by:</span>
-                      <select
-                        value={sortBy}
-                        onChange={(e) => setSortBy(e.target.value as any)}
-                        className="rounded border-gray-300 text-sm"
-                      >
-                        <option value="frequency">Frequency (Rank)</option>
-                        <option value="contradictions">Total Contradictions</option>
-                        <option value="neutrals">Total Neutrals</option>
-                        <option value="entailments">Total Entailments</option>
-                      </select>
-                    </div>
-
                     {/* Detailed Chunk Cards */}
                     <div className="space-y-6 max-h-96 overflow-y-auto">
-                      {sortedChunkData.map((chunk, index) => (
-                        <div key={`${chunk.doc_id}-${index}`} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                      {sortedChunkData.map((chunk, index) => {
+                        const cardDocId = toSafeId(String(chunk.doc_id || 'unknown'));
+                        return (
+                        <div key={`${chunk.doc_id}-${index}`} className="bg-white border border-gray-200 rounded-lg overflow-hidden" data-docid={cardDocId} data-rank={String(chunk.frequency_rank ?? '')}>
                           <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
                             <div className="flex justify-between items-center">
                               <h4 className="font-semibold text-gray-900">
@@ -795,7 +945,7 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
                             </div>
                           </div>
                         </div>
-                      ))}
+                      )})}
                     </div>
                   </div>
                 ) : (
