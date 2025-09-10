@@ -37,7 +37,7 @@ interface EnhancedChunkData {
   response_entailment_rate: number;
 }
 
-const ChunkAnalysis: React.FC<ChunkAnalysisProps> = ({ questions }) => {
+const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
   const [topN, setTopN] = useState<number>(20);
   const [selectedView, setSelectedView] = useState<'frequency' | 'length' | 'duplicates'>('frequency');
   const [analysisMode, setAnalysisMode] = useState<'retrieved2answer' | 'retrieved2response'>('retrieved2answer');
@@ -48,179 +48,367 @@ const ChunkAnalysis: React.FC<ChunkAnalysisProps> = ({ questions }) => {
     logger.info('ChunkAnalysis rendered successfully');
   }, []);
 
-  const { chunkFrequencyData, lengthDistributionData, duplicateGroups, stats, enhancedChunkData } = useMemo(() => {
+  const { lengthDistributionData, duplicateGroups, stats, enhancedChunkData } = useMemo(() => {
     const chunkMap = new Map<string, ChunkInfo>();
     const enhancedChunkMap = new Map<string, EnhancedChunkData>();
     const allChunks: Array<{ doc_id: string; text: string; questionId: string }> = [];
 
-    questions.forEach((question) => {
-      question.retrieved_context?.forEach((chunk) => {
-        const key = `${chunk.doc_id}:${chunk.text}`;
-        allChunks.push({ ...chunk, questionId: question.query_id });
+    // Safely process questions with error handling
+    try {
+      if (!questions || !Array.isArray(questions)) {
+        console.warn('No valid questions array provided');
+        return { lengthDistributionData: [], duplicateGroups: [], stats: { totalUniqueChunks: 0, averageLength: 0, duplicateGroups: 0 }, enhancedChunkData: [] };
+      }
 
-        if (!chunkMap.has(key)) {
-          chunkMap.set(key, {
-            doc_id: chunk.doc_id,
-            text: chunk.text,
-            frequency: 0,
-            questions: [],
-            wordCount: chunk.text.split(/\s+/).length
-          });
+      questions.forEach((question) => {
+        if (!question?.retrieved_context || !Array.isArray(question.retrieved_context)) {
+          return;
         }
+        
+        question.retrieved_context.forEach((chunk) => {
+          if (!chunk?.doc_id || !chunk?.text) {
+            return;
+          }
+          
+          const key = `${chunk.doc_id}:${chunk.text}`;
+          allChunks.push({ ...chunk, questionId: question.query_id || 'unknown' });
 
-        const chunkInfo = chunkMap.get(key)!;
-        chunkInfo.frequency++;
-        if (!chunkInfo.questions.includes(question.query_id)) {
-          chunkInfo.questions.push(question.query_id);
-        }
+          if (!chunkMap.has(key)) {
+            chunkMap.set(key, {
+              doc_id: chunk.doc_id,
+              text: chunk.text,
+              frequency: 0,
+              questions: [],
+              wordCount: (chunk.text || '').split(/\s+/).filter(word => word.length > 0).length
+            });
+          }
 
-        // Build enhanced chunk data with entailment information
-        if (chunk.effectiveness_analysis && !enhancedChunkMap.has(key)) {
-          enhancedChunkMap.set(key, {
-            doc_id: chunk.doc_id,
-            text: chunk.text,
-            frequency: chunk.effectiveness_analysis.total_appearances || 0,
-            frequency_rank: chunk.effectiveness_analysis.frequency_rank || 0,
-            questions: chunk.effectiveness_analysis.questions_appeared || [],
-            wordCount: chunk.text.split(/\s+/).length,
-            gt_entailments: chunk.effectiveness_analysis.gt_entailments || 0,
-            gt_neutrals: chunk.effectiveness_analysis.gt_neutrals || 0,
-            gt_contradictions: chunk.effectiveness_analysis.gt_contradictions || 0,
-            response_entailments: chunk.effectiveness_analysis.response_entailments || 0,
-            response_neutrals: chunk.effectiveness_analysis.response_neutrals || 0,
-            response_contradictions: chunk.effectiveness_analysis.response_contradictions || 0,
-            gt_entailment_rate: chunk.effectiveness_analysis.gt_entailment_rate || 0,
-            response_entailment_rate: chunk.effectiveness_analysis.response_entailment_rate || 0,
-          });
-        } else if (!chunk.effectiveness_analysis) {
-          console.warn('Chunk missing effectiveness_analysis:', chunk.doc_id);
-        }
+          const chunkInfo = chunkMap.get(key)!;
+          chunkInfo.frequency++;
+          const questionId = question.query_id || 'unknown';
+          if (!chunkInfo.questions.includes(questionId)) {
+            chunkInfo.questions.push(questionId);
+          }
+
+          // Build enhanced chunk data with entailment information
+          if (chunk.effectiveness_analysis && !enhancedChunkMap.has(key)) {
+            enhancedChunkMap.set(key, {
+              doc_id: chunk.doc_id,
+              text: chunk.text,
+              frequency: Math.max(0, Number(chunk.effectiveness_analysis.total_appearances) || 0),
+              frequency_rank: Math.max(0, Number(chunk.effectiveness_analysis.frequency_rank) || 0),
+              questions: Array.isArray(chunk.effectiveness_analysis.questions_appeared) ? chunk.effectiveness_analysis.questions_appeared : [],
+              wordCount: (chunk.text || '').split(/\s+/).filter(word => word.length > 0).length,
+              gt_entailments: Math.max(0, Number(chunk.effectiveness_analysis.gt_entailments) || 0),
+              gt_neutrals: Math.max(0, Number(chunk.effectiveness_analysis.gt_neutrals) || 0),
+              gt_contradictions: Math.max(0, Number(chunk.effectiveness_analysis.gt_contradictions) || 0),
+              response_entailments: Math.max(0, Number(chunk.effectiveness_analysis.response_entailments) || 0),
+              response_neutrals: Math.max(0, Number(chunk.effectiveness_analysis.response_neutrals) || 0),
+              response_contradictions: Math.max(0, Number(chunk.effectiveness_analysis.response_contradictions) || 0),
+              gt_entailment_rate: Math.max(0, Math.min(1, Number(chunk.effectiveness_analysis.gt_entailment_rate) || 0)),
+              response_entailment_rate: Math.max(0, Math.min(1, Number(chunk.effectiveness_analysis.response_entailment_rate) || 0)),
+            });
+          }
+        });
       });
-    });
-
-    const chunkFrequencyData = Array.from(chunkMap.values())
-      .sort((a, b) => b.frequency - a.frequency)
-      .slice(0, topN)
-      .map((chunk, index) => ({
-        rank: index + 1,
-        doc_id: chunk.doc_id,
-        frequency: chunk.frequency,
-        wordCount: chunk.wordCount,
-        questions: chunk.questions,
-        snippet: chunk.text.length > 100 ? chunk.text.substring(0, 100) + '...' : chunk.text
-      }));
+    } catch (error) {
+      console.error('Error processing questions data:', error);
+      return { lengthDistributionData: [], duplicateGroups: [], stats: { totalUniqueChunks: 0, averageLength: 0, duplicateGroups: 0 }, enhancedChunkData: [] };
+    }
 
     const lengthCounts = new Map<number, number>();
     chunkMap.forEach(chunk => {
-      const lengthBucket = Math.floor(chunk.wordCount / 50) * 50;
-      lengthCounts.set(lengthBucket, (lengthCounts.get(lengthBucket) || 0) + 1);
+      if (chunk?.wordCount && Number.isFinite(chunk.wordCount)) {
+        const lengthBucket = Math.floor(Math.max(0, chunk.wordCount) / 50) * 50;
+        lengthCounts.set(lengthBucket, (lengthCounts.get(lengthBucket) || 0) + 1);
+      }
     });
 
     const lengthDistributionData = Array.from(lengthCounts.entries())
       .sort((a, b) => a[0] - b[0])
       .map(([length, count]) => ({
         lengthRange: `${length}-${length + 49}`,
-        count,
-        length
+        count: Math.max(0, count),
+        length: Math.max(0, length)
       }));
 
     const duplicateMap = new Map<string, Array<{ doc_id: string; text: string }>>();
     chunkMap.forEach(chunk => {
-      const normalized = chunk.text.trim().replace(/\s+/g, ' ');
-      if (!duplicateMap.has(normalized)) {
-        duplicateMap.set(normalized, []);
+      if (chunk?.text) {
+        const normalized = chunk.text.trim().replace(/\s+/g, ' ');
+        if (!duplicateMap.has(normalized)) {
+          duplicateMap.set(normalized, []);
+        }
+        duplicateMap.get(normalized)!.push({ doc_id: chunk.doc_id || 'unknown', text: chunk.text });
       }
-      duplicateMap.get(normalized)!.push({ doc_id: chunk.doc_id, text: chunk.text });
     });
 
     const duplicateGroups: DuplicateGroup[] = Array.from(duplicateMap.entries())
       .filter(([_, chunks]) => {
-        const uniqueDocIds = new Set(chunks.map(c => c.doc_id));
+        if (!chunks || chunks.length <= 1) return false;
+        const uniqueDocIds = new Set(chunks.map(c => c?.doc_id).filter(Boolean));
         return uniqueDocIds.size > 1;
       })
       .map(([normalizedText, chunks]) => ({
         normalizedText,
-        chunks
+        chunks: chunks.filter(c => c?.doc_id && c?.text)
       }))
       .sort((a, b) => b.chunks.length - a.chunks.length);
 
+    const chunkValues = Array.from(chunkMap.values()).filter(chunk => chunk && Number.isFinite(chunk.wordCount));
+    const totalWords = chunkValues.reduce((sum, chunk) => sum + chunk.wordCount, 0);
     const stats = {
       totalUniqueChunks: chunkMap.size,
-      averageLength: Array.from(chunkMap.values()).reduce((sum, chunk) => sum + chunk.wordCount, 0) / chunkMap.size,
+      averageLength: chunkValues.length > 0 ? Math.round(totalWords / chunkValues.length) : 0,
       duplicateGroups: duplicateGroups.length
     };
 
-    // Process enhanced chunk data
-    const enhancedChunkData = Array.from(enhancedChunkMap.values());
+    // Process enhanced chunk data with validation
+    const enhancedChunkData = Array.from(enhancedChunkMap.values()).filter(chunk => 
+      chunk && chunk.doc_id && chunk.text && Number.isFinite(chunk.frequency)
+    );
 
-    return { chunkFrequencyData, lengthDistributionData, duplicateGroups, stats, enhancedChunkData };
+    return { lengthDistributionData, duplicateGroups, stats, enhancedChunkData };
   }, [questions, topN]);
 
   // Prepare data for stacked bar chart and expandable section
   const chartData = useMemo(() => {
-    if (!enhancedChunkData || enhancedChunkData.length === 0) {
-      console.warn('No enhancedChunkData available for chart');
+    if (!enhancedChunkData || !Array.isArray(enhancedChunkData) || enhancedChunkData.length === 0) {
+      console.warn('No enhancedChunkData available for entailment chart');
       return [];
     }
     
-    const validChunks = enhancedChunkData
-      .filter(chunk => chunk && typeof chunk === 'object' && chunk.doc_id)
-      .slice(0, topN);
+    try {
+      // Validate topN to prevent crashes
+      const validTopN = Math.max(1, Math.min(Number(topN) || 20, 1000));
       
-    if (validChunks.length === 0) {
-      console.warn('No valid chunks for chart');
+      const sortedChunks = [...enhancedChunkData]
+        .filter(chunk => {
+          // Comprehensive validation
+          return chunk && 
+                 typeof chunk === 'object' && 
+                 chunk.doc_id && 
+                 typeof chunk.doc_id === 'string' &&
+                 chunk.text &&
+                 typeof chunk.text === 'string' &&
+                 typeof chunk.frequency === 'number' && 
+                 Number.isFinite(chunk.frequency) &&
+                 chunk.frequency >= 0;
+        })
+        .sort((a, b) => {
+          const freqA = Number(a.frequency) || 0;
+          const freqB = Number(b.frequency) || 0;
+          return freqB - freqA;
+        })
+        .slice(0, validTopN);
+        
+      if (sortedChunks.length === 0) {
+        console.warn('No valid chunks for entailment chart');
+        return [];
+      }
+      
+      const data = sortedChunks.map((chunk, index) => {
+        // Safe extraction with validation
+        const entailments = analysisMode === 'retrieved2answer' ? 
+          Math.max(0, Number(chunk.gt_entailments) || 0) : 
+          Math.max(0, Number(chunk.response_entailments) || 0);
+        const neutrals = analysisMode === 'retrieved2answer' ? 
+          Math.max(0, Number(chunk.gt_neutrals) || 0) : 
+          Math.max(0, Number(chunk.response_neutrals) || 0);
+        const contradictions = analysisMode === 'retrieved2answer' ? 
+          Math.max(0, Number(chunk.gt_contradictions) || 0) : 
+          Math.max(0, Number(chunk.response_contradictions) || 0);
+          
+        const safeDocId = String(chunk.doc_id || `chunk-${index}`).substring(0, 20).replace(/[^a-zA-Z0-9\-_]/g, '_');
+        
+        // Ensure all values are valid numbers
+        const validEntailments = Number.isFinite(entailments) ? entailments : 0;
+        const validNeutrals = Number.isFinite(neutrals) ? neutrals : 0;
+        const validContradictions = Number.isFinite(contradictions) ? contradictions : 0;
+        
+        // Use a unique key for the X domain to avoid duplicate categories
+        const xKey = `${safeDocId}-${index}`;
+        
+        return {
+          id: `chunk-${index}`,
+          xKey,
+          doc_label: safeDocId,
+          entailments: validEntailments,
+          neutrals: validNeutrals,
+          contradictions: validContradictions,
+          total: validEntailments + validNeutrals + validContradictions,
+          chunk: chunk
+        };
+      }).filter(item => 
+        item && 
+        item.xKey &&
+        item.xKey.length > 0 &&
+        Number.isFinite(item.entailments) &&
+        Number.isFinite(item.neutrals) &&
+        Number.isFinite(item.contradictions)
+      );
+      
+      // Ensure we always return at least an empty array
+      const validData = Array.isArray(data) ? data : [];
+      console.log('Entailment chart data prepared:', validData.length, 'items');
+      return validData;
+    } catch (error) {
+      console.error('Error preparing entailment chart data:', error);
       return [];
     }
-    
-    const data = validChunks.map((chunk, index) => {
-      const entailments = analysisMode === 'retrieved2answer' ? 
-        (Number(chunk.gt_entailments) || 0) : 
-        (Number(chunk.response_entailments) || 0);
-      const neutrals = analysisMode === 'retrieved2answer' ? 
-        (Number(chunk.gt_neutrals) || 0) : 
-        (Number(chunk.response_neutrals) || 0);
-      const contradictions = analysisMode === 'retrieved2answer' ? 
-        (Number(chunk.gt_contradictions) || 0) : 
-        (Number(chunk.response_contradictions) || 0);
-        
-      return {
-        id: `chunk-${index}`,
-        doc_id: String(chunk.doc_id).substring(0, 20), // Truncate for display
-        entailments,
-        neutrals,
-        contradictions,
-        total: entailments + neutrals + contradictions
-      };
-    });
-    
-    console.log('Chart data prepared:', data.length, 'items', data);
-    return data;
   }, [enhancedChunkData, topN, analysisMode]);
+
+  // Prepare frequency chart data with proper memoization
+  const frequencyChartData = useMemo(() => {
+    if (!enhancedChunkData || !Array.isArray(enhancedChunkData) || enhancedChunkData.length === 0) {
+      console.warn('No enhancedChunkData for frequency chart');
+      return [];
+    }
+
+    try {
+      // Validate topN to prevent crashes
+      const validTopN = Math.max(1, Math.min(Number(topN) || 20, 1000));
+      
+      const sortedData = [...enhancedChunkData]
+        .filter(chunk => {
+          // Comprehensive validation
+          return chunk && 
+                 typeof chunk === 'object' && 
+                 chunk.doc_id && 
+                 typeof chunk.doc_id === 'string' &&
+                 chunk.text &&
+                 typeof chunk.text === 'string' &&
+                 typeof chunk.frequency === 'number' && 
+                 Number.isFinite(chunk.frequency) &&
+                 chunk.frequency >= 0;
+        })
+        .sort((a, b) => {
+          const freqA = Number(a.frequency) || 0;
+          const freqB = Number(b.frequency) || 0;
+          return freqB - freqA;
+        })
+        .slice(0, validTopN)
+        .map((chunk, index) => {
+          const safeDocId = String(chunk.doc_id || `chunk-${index}`)
+            .substring(0, 30)
+            .replace(/[^a-zA-Z0-9\-_]/g, '_');
+          const safeFrequency = Math.max(0, Number(chunk.frequency) || 0);
+          const safeWordCount = Math.max(0, Number(chunk.wordCount) || 0);
+          
+          const itemId = `${safeDocId} (${safeWordCount})`;
+          const xKey = `${safeDocId}-${safeWordCount}-${index}`; // guaranteed unique within the slice
+          
+          return {
+            id: itemId,
+            xKey,
+            frequency: safeFrequency,
+            chunk: chunk,
+            index: index
+          };
+        })
+        .filter(item => 
+          item && 
+          item.frequency > 0 && 
+          item.id && 
+          item.id.length > 0 &&
+          Number.isFinite(item.frequency) &&
+          item.chunk &&
+          item.chunk.doc_id
+        );
+
+      // Ensure we always return at least an empty array
+      const validData = Array.isArray(sortedData) ? sortedData : [];
+      console.log('Frequency chart data prepared:', validData.length, 'items');
+      return validData;
+    } catch (error) {
+      console.error('Error preparing frequency chart data:', error);
+      return [];
+    }
+  }, [enhancedChunkData, topN]);
+
+  // Compute stable Y domains to avoid Recharts domain truncation issues
+  const frequencyYDomain = useMemo<[number, number]>(() => {
+    const max = Array.isArray(frequencyChartData)
+      ? frequencyChartData.reduce((m, d: any) => Math.max(m, Number(d?.frequency) || 0), 0)
+      : 0;
+    const upper = max > 0 ? Math.max(1, Math.ceil(max * 1.1)) : 1;
+    return [0, upper];
+  }, [frequencyChartData]);
+
+  const frequencyXDomain = useMemo<string[]>(() => {
+    if (!Array.isArray(frequencyChartData)) return [];
+    const ids = frequencyChartData.map((d: any) => String(d?.id ?? ''));
+    return Array.from(new Set(ids)).filter(Boolean);
+  }, [frequencyChartData]);
+
+  const entailmentYDomain = useMemo<[number, number]>(() => {
+    const max = Array.isArray(chartData)
+      ? chartData.reduce((m, d: any) => Math.max(m, Number(d?.total) || 0), 0)
+      : 0;
+    const upper = max > 0 ? Math.max(1, Math.ceil(max * 1.1)) : 1;
+    return [0, upper];
+  }, [chartData]);
+
+  const entailmentXDomain = useMemo<string[]>(() => {
+    if (!Array.isArray(chartData)) return [];
+    const ids = chartData.map((d: any) => String(d?.doc_id ?? ''));
+    return Array.from(new Set(ids)).filter(Boolean);
+  }, [chartData]);
 
   // Sorted data for the expandable section
   const sortedChunkData = useMemo(() => {
-    if (!enhancedChunkData || enhancedChunkData.length === 0) return [];
+    if (!enhancedChunkData || !Array.isArray(enhancedChunkData) || enhancedChunkData.length === 0) {
+      return [];
+    }
     
-    return [...enhancedChunkData].sort((a, b) => {
-      switch (sortBy) {
-        case 'frequency':
-          return b.frequency - a.frequency;
-        case 'contradictions':
-          const aContradictions = analysisMode === 'retrieved2answer' ? a.gt_contradictions : a.response_contradictions;
-          const bContradictions = analysisMode === 'retrieved2answer' ? b.gt_contradictions : b.response_contradictions;
-          return bContradictions - aContradictions;
-        case 'neutrals':
-          const aNeutrals = analysisMode === 'retrieved2answer' ? a.gt_neutrals : a.response_neutrals;
-          const bNeutrals = analysisMode === 'retrieved2answer' ? b.gt_neutrals : b.response_neutrals;
-          return bNeutrals - aNeutrals;
-        case 'entailments':
-          const aEntailments = analysisMode === 'retrieved2answer' ? a.gt_entailments : a.response_entailments;
-          const bEntailments = analysisMode === 'retrieved2answer' ? b.gt_entailments : b.response_entailments;
-          return bEntailments - aEntailments;
-        default:
-          return b.frequency - a.frequency;
-      }
-    });
+    try {
+      const validChunks = enhancedChunkData.filter(chunk => 
+        chunk && 
+        typeof chunk === 'object' && 
+        chunk.doc_id && 
+        chunk.text &&
+        Number.isFinite(chunk.frequency)
+      );
+      
+      return [...validChunks].sort((a, b) => {
+        try {
+          switch (sortBy) {
+            case 'frequency':
+              const freqA = Number(a.frequency) || 0;
+              const freqB = Number(b.frequency) || 0;
+              return freqB - freqA;
+            case 'contradictions':
+              const aContradictions = analysisMode === 'retrieved2answer' ? 
+                (Number(a.gt_contradictions) || 0) : (Number(a.response_contradictions) || 0);
+              const bContradictions = analysisMode === 'retrieved2answer' ? 
+                (Number(b.gt_contradictions) || 0) : (Number(b.response_contradictions) || 0);
+              return bContradictions - aContradictions;
+            case 'neutrals':
+              const aNeutrals = analysisMode === 'retrieved2answer' ? 
+                (Number(a.gt_neutrals) || 0) : (Number(a.response_neutrals) || 0);
+              const bNeutrals = analysisMode === 'retrieved2answer' ? 
+                (Number(b.gt_neutrals) || 0) : (Number(b.response_neutrals) || 0);
+              return bNeutrals - aNeutrals;
+            case 'entailments':
+              const aEntailments = analysisMode === 'retrieved2answer' ? 
+                (Number(a.gt_entailments) || 0) : (Number(a.response_entailments) || 0);
+              const bEntailments = analysisMode === 'retrieved2answer' ? 
+                (Number(b.gt_entailments) || 0) : (Number(b.response_entailments) || 0);
+              return bEntailments - aEntailments;
+            default:
+              const defFreqA = Number(a.frequency) || 0;
+              const defFreqB = Number(b.frequency) || 0;
+              return defFreqB - defFreqA;
+          }
+        } catch (sortError) {
+          console.warn('Error sorting chunks:', sortError);
+          return 0;
+        }
+      });
+    } catch (error) {
+      console.error('Error preparing sorted chunk data:', error);
+      return [];
+    }
   }, [enhancedChunkData, sortBy, analysisMode]);
 
   const exportDuplicatesCSV = () => {
@@ -247,24 +435,6 @@ const ChunkAnalysis: React.FC<ChunkAnalysisProps> = ({ questions }) => {
     logger.info('Exported duplicate chunks CSV');
   };
 
-  const FrequencyTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      return (
-        <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg max-w-sm">
-          <p className="font-semibold text-gray-900">#{data.rank}</p>
-          <p className="text-sm font-medium text-gray-700">{data.doc_id}</p>
-          <p className="text-xs text-gray-600 mb-2">{data.snippet}</p>
-          <div className="text-xs">
-            <div>Frequency: {data.frequency}</div>
-            <div>Length: {data.wordCount} words</div>
-            <div>Questions: {data.questions.join(', ')}</div>
-          </div>
-        </div>
-      );
-    }
-    return null;
-  };
 
   return (
     <div className="p-6">
@@ -309,34 +479,129 @@ const ChunkAnalysis: React.FC<ChunkAnalysisProps> = ({ questions }) => {
 
       {selectedView === 'frequency' && (
         <div>
-          {/* Controls Section */}
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <label className="text-sm font-medium text-gray-700">
-                Show top:
-                <select
-                  value={topN}
-                  onChange={(e) => setTopN(Number(e.target.value))}
-                  className="ml-2 rounded border-gray-300 text-sm"
-                >
-                  <option value={10}>10</option>
-                  <option value={20}>20</option>
-                  <option value={50}>50</option>
-                </select>
-                chunks
-              </label>
-            </div>
+          {/* Top N Control */}
+          <div className="mb-4">
+            <label className="text-sm font-medium text-gray-700">
+              Show top:
+              <select
+                value={topN}
+                onChange={(e) => setTopN(Number(e.target.value))}
+                className="ml-2 rounded border-gray-300 text-sm"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+              chunks
+            </label>
+          </div>
 
-            {/* Analysis Mode Selector */}
-            <div className="flex items-center space-x-2">
-              <span className="text-sm font-medium text-gray-700">Analysis Mode:</span>
+          {/* Chunk Frequency Ranking Chart */}
+          <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6" style={{ height: '400px' }}>
+            <h3 className="text-lg font-semibold text-center mb-4 text-gray-800">
+              Chunk Frequency Ranking
+            </h3>
+            {Array.isArray(frequencyChartData) && frequencyChartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={frequencyChartData}
+                  margin={{ top: 20, right: 30, left: 20, bottom: 100 }}
+                  layout="horizontal"
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    dataKey="xKey" 
+                    angle={-45}
+                    textAnchor="end"
+                    height={100}
+                    fontSize={10}
+                    interval="preserveStartEnd"
+                    scale="band"
+                    tickFormatter={(value, index) => {
+                      try {
+                        const d = frequencyChartData[index];
+                        return d?.id ?? String(value);
+                      } catch {
+                        return String(value);
+                      }
+                    }}
+                    allowDuplicatedCategory={false}
+                  />
+                  <YAxis 
+                    label={{ value: 'Frequency Count', angle: -90, position: 'insideLeft' }}
+                    domain={frequencyYDomain}
+                    allowDecimals={false}
+                    allowDataOverflow={false}
+                  />
+                  <Tooltip 
+                    formatter={(value, name) => {
+                      const safeValue = Number(value) || 0;
+                      return [safeValue, 'Frequency'];
+                    }}
+                    labelFormatter={(label) => `${String(label || 'Unknown')}`}
+                    content={({ active, payload, label }) => {
+                      try {
+                        if (active && payload && payload.length && payload[0]?.payload) {
+                          const data = payload[0].payload;
+                          const chunk = data?.chunk;
+                          if (!chunk) return null;
+                          
+                          const safeDocId = String(chunk.doc_id || 'Unknown');
+                          const safeText = String(chunk.text || '');
+                          const safeFrequency = Number(chunk.frequency) || 0;
+                          const safeWordCount = Number(chunk.wordCount) || 0;
+                          const safeRank = Number(chunk.frequency_rank) || 0;
+                          const safeQuestions = Array.isArray(chunk.questions) ? chunk.questions : [];
+                          
+                          return (
+                            <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg max-w-sm">
+                              <p className="font-semibold text-gray-900">{safeDocId}</p>
+                              <p className="text-xs text-gray-600 mb-2">
+                                {safeText.length > 100 ? safeText.substring(0, 100) + '...' : safeText}
+                              </p>
+                              <div className="text-xs space-y-1">
+                                <div>Frequency: <span className="font-medium">{safeFrequency}</span></div>
+                                <div>Word Count: <span className="font-medium">{safeWordCount}</span></div>
+                                <div>Rank: <span className="font-medium">#{safeRank}</span></div>
+                                <div className="pt-1">
+                                  <div className="text-gray-600">Questions:</div>
+                                  <div className="text-gray-500 text-xs">{safeQuestions.join(', ')}</div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+                      } catch (error) {
+                        console.warn('Error rendering frequency tooltip:', error);
+                      }
+                      return null;
+                    }}
+                  />
+                  <Bar dataKey="frequency" fill="#3B82F6" isAnimationActive={false} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center text-gray-500">
+                  <p className="text-lg mb-2">No chunk frequency data available</p>
+                  <p className="text-sm">Load a run with analyzed chunks to view the chart</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Analysis Mode Selector */}
+          <div className="mb-4 flex justify-center">
+            <div className="flex items-center space-x-4 bg-gray-50 p-3 rounded-lg border border-gray-200">
+              <span className="text-sm font-medium text-gray-700">Entailment Analysis Mode:</span>
               <label className="flex items-center">
                 <input
                   type="radio"
                   value="retrieved2answer"
                   checked={analysisMode === 'retrieved2answer'}
                   onChange={(e) => setAnalysisMode(e.target.value as any)}
-                  className="mr-1"
+                  className="mr-2"
                 />
                 <span className="text-sm text-gray-700">Ground Truth</span>
               </label>
@@ -346,7 +611,7 @@ const ChunkAnalysis: React.FC<ChunkAnalysisProps> = ({ questions }) => {
                   value="retrieved2response"
                   checked={analysisMode === 'retrieved2response'}
                   onChange={(e) => setAnalysisMode(e.target.value as any)}
-                  className="mr-1"
+                  className="mr-2"
                 />
                 <span className="text-sm text-gray-700">Response</span>
               </label>
@@ -363,20 +628,71 @@ const ChunkAnalysis: React.FC<ChunkAnalysisProps> = ({ questions }) => {
                 <BarChart
                   data={chartData}
                   margin={{ top: 20, right: 30, left: 20, bottom: 100 }}
+                  layout="horizontal"
                 >
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
-                    dataKey="doc_id" 
+                    dataKey="xKey" 
                     angle={-45}
                     textAnchor="end"
                     height={100}
                     fontSize={10}
+                    interval="preserveStartEnd"
+                    scale="band"
+                    tickFormatter={(value, index) => {
+                      try {
+                        const d = chartData[index];
+                        return d?.doc_label ?? String(value);
+                      } catch {
+                        return String(value);
+                      }
+                    }}
+                    allowDuplicatedCategory={false}
                   />
-                  <YAxis />
-                  <Tooltip />
-                  <Bar dataKey="entailments" stackId="a" fill="#10B981" />
-                  <Bar dataKey="neutrals" stackId="a" fill="#F59E0B" />
-                  <Bar dataKey="contradictions" stackId="a" fill="#EF4444" />
+                  <YAxis 
+                    domain={entailmentYDomain}
+                    allowDecimals={false}
+                    allowDataOverflow={false}
+                  />
+                  <Tooltip 
+                    formatter={(value, name) => {
+                      const safeValue = Number(value) || 0;
+                      const safeName = String(name || 'Unknown');
+                      return [safeValue, safeName];
+                    }}
+                    labelFormatter={() => ''}
+                    content={({ active, payload }) => {
+                      try {
+                        if (active && payload && payload.length) {
+                          const d: any = payload[0]?.payload;
+                          const docLabel = d?.doc_label || d?.xKey || 'Unknown';
+                          return (
+                            <div className="bg-white p-3 border border-gray-300 rounded-lg shadow-lg">
+                              <p className="font-semibold text-gray-900">Chunk: {docLabel}</p>
+                              <div className="text-sm space-y-1">
+                                {payload.map((entry, index) => {
+                                  const value = Number(entry.value) || 0;
+                                  const name = String(entry.name || 'Unknown');
+                                  const color = entry.color || '#000000';
+                                  return (
+                                    <div key={index} style={{ color }}>
+                                      {name}: {value}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        }
+                      } catch (error) {
+                        console.warn('Error rendering entailment tooltip:', error);
+                      }
+                      return null;
+                    }}
+                  />
+                  <Bar dataKey="entailments" stackId="a" fill="#10B981" isAnimationActive={false} />
+                  <Bar dataKey="neutrals" stackId="a" fill="#F59E0B" isAnimationActive={false} />
+                  <Bar dataKey="contradictions" stackId="a" fill="#EF4444" isAnimationActive={false} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -574,6 +890,22 @@ const ChunkAnalysis: React.FC<ChunkAnalysisProps> = ({ questions }) => {
       )}
     </div>
   );
+};
+
+const ChunkAnalysis: React.FC<ChunkAnalysisProps> = ({ questions }) => {
+  try {
+    return <ChunkAnalysisInner questions={questions} />;
+  } catch (error) {
+    console.error('ChunkAnalysis crashed:', error);
+    return (
+      <div className="p-6 bg-red-50 border border-red-200 rounded-lg">
+        <div className="text-center">
+          <h2 className="text-xl font-bold text-red-800 mb-2">Chunk Analysis Error</h2>
+          <p className="text-red-600">Failed to load chunk analysis. Please refresh the page.</p>
+        </div>
+      </div>
+    );
+  }
 };
 
 export default ChunkAnalysis;
