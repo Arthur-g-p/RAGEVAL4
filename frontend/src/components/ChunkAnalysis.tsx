@@ -48,14 +48,14 @@ const ChunkTooltipCard: React.FC<{ chunk: EnhancedChunkData }> = ({ chunk }) => 
   const safeQuestions = Array.isArray(chunk.questions) ? chunk.questions : [];
 
   const gt = {
-    e: Number(chunk.gt_entailments) || 0,
-    n: Number(chunk.gt_neutrals) || 0,
-    c: Number(chunk.gt_contradictions) || 0,
+    entailments: Number(chunk.gt_entailments) || 0,
+    neutrals: Number(chunk.gt_neutrals) || 0,
+    contradictions: Number(chunk.gt_contradictions) || 0,
   };
   const resp = {
-    e: Number(chunk.response_entailments) || 0,
-    n: Number(chunk.response_neutrals) || 0,
-    c: Number(chunk.response_contradictions) || 0,
+    entailments: Number(chunk.response_entailments) || 0,
+    neutrals: Number(chunk.response_neutrals) || 0,
+    contradictions: Number(chunk.response_contradictions) || 0,
   };
 
   return (
@@ -67,17 +67,17 @@ const ChunkTooltipCard: React.FC<{ chunk: EnhancedChunkData }> = ({ chunk }) => 
         <div>Word Count: <span className="font-medium">{safeWordCount}</span></div>
         <div>Rank: <span className="font-medium">#{safeRank}</span></div>
         <div className="grid grid-cols-1 gap-1 pt-1">
-          <div className="flex items-center gap-2">
-            <span className="text-gray-700 min-w-10">GT:</span>
-            <span className="text-green-600">E {gt.e}</span>
-            <span className="text-gray-500">N {gt.n}</span>
-            <span className="text-red-600">C {gt.c}</span>
+          <div className="flex items-center gap-3">
+            <span className="text-gray-700 font-medium">Ground Truth:</span>
+            <span className="text-green-600">Entailments {gt.entailments}</span>
+            <span className="text-gray-500">Neutrals {gt.neutrals}</span>
+            <span className="text-red-600">Contradictions {gt.contradictions}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-gray-700 min-w-10">Resp:</span>
-            <span className="text-green-600">E {resp.e}</span>
-            <span className="text-gray-500">N {resp.n}</span>
-            <span className="text-red-600">C {resp.c}</span>
+          <div className="flex items-center gap-3">
+            <span className="text-gray-700 font-medium">Response:</span>
+            <span className="text-green-600">Entailments {resp.entailments}</span>
+            <span className="text-gray-500">Neutrals {resp.neutrals}</span>
+            <span className="text-red-600">Contradictions {resp.contradictions}</span>
           </div>
         </div>
         <div className="pt-1">
@@ -98,6 +98,7 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
   const [activeFreqIndex, setActiveFreqIndex] = useState<number | null>(null);
   const [activeEntIndex, setActiveEntIndex] = useState<number | null>(null);
   const [showPercent, setShowPercent] = useState<boolean>(false);
+  const [helpCardKey, setHelpCardKey] = useState<string | null>(null);
 
   React.useEffect(() => {
     logger.info('ChunkAnalysis rendered successfully');
@@ -228,6 +229,10 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
 
   // Prepare data for stacked bar chart and expandable section
   const toSafeId = (s: string) => String(s || '').substring(0, 80).replace(/[^a-zA-Z0-9\-_]/g, '_');
+  const truncateLabel = (s: string, max: number = 28) => {
+    const str = String(s || '');
+    return str.length > max ? str.substring(0, max - 1) + '…' : str;
+  };
 
   const chartData = useMemo(() => {
     if (!enhancedChunkData || !Array.isArray(enhancedChunkData) || enhancedChunkData.length === 0) {
@@ -621,7 +626,7 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={frequencyChartData}
-                  margin={{ top: 20, right: 30, left: 20, bottom: 100 }}
+                  margin={{ top: 20, right: 30, left: 20, bottom: 120 }}
                   layout="horizontal"
                 >
                   <CartesianGrid strokeDasharray="3 3" />
@@ -631,14 +636,17 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
                     textAnchor="end"
                     height={100}
                     fontSize={10}
+                    tickMargin={12}
                     interval="preserveStartEnd"
                     scale="band"
+                    tick={{ fill: '#374151' }}
                     tickFormatter={(value, index) => {
                       try {
                         const d = frequencyChartData[index];
-                        return d?.id ?? String(value);
+                        const label = d?.id ?? String(value);
+                        return truncateLabel(label);
                       } catch {
-                        return String(value);
+                        return truncateLabel(String(value));
                       }
                     }}
                     allowDuplicatedCategory={false}
@@ -771,7 +779,7 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={chartData}
-                  margin={{ top: 20, right: 30, left: 20, bottom: 100 }}
+                  margin={{ top: 20, right: 30, left: 20, bottom: 120 }}
                   layout="horizontal"
                 >
                   <CartesianGrid strokeDasharray="3 3" />
@@ -781,14 +789,17 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
                     textAnchor="end"
                     height={100}
                     fontSize={10}
+                    tickMargin={12}
                     interval="preserveStartEnd"
                     scale="band"
+                    tick={{ fill: '#374151' }}
                     tickFormatter={(value, index) => {
                       try {
                         const d = chartData[index];
-                        return d?.doc_label ?? String(value);
+                        const label = d?.doc_label ?? String(value);
+                        return truncateLabel(label);
                       } catch {
-                        return String(value);
+                        return truncateLabel(String(value));
                       }
                     }}
                     allowDuplicatedCategory={false}
@@ -908,39 +919,111 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
                               </p>
                             </div>
 
-                            {/* Global Effectiveness Section - Same styling as QuestionInspector */}
+                            {/* Relations Breakdown - Table with help overlay */}
                             <div className="bg-gray-50 p-4 rounded-lg border border-gray-300">
-                              <h5 className="font-semibold text-gray-900 mb-3">Global Effectiveness</h5>
-                              <div className="space-y-3 text-sm">
-                                <div>
-                                  <div className="font-medium text-gray-800 mb-1">Frequency:</div>
-                                  <div className="text-gray-600 ml-3">
-                                    Found {chunk.frequency}x (Rank #{chunk.frequency_rank})
-                                  </div>
+                              <h5 className="font-semibold text-gray-900 mb-3">Chunk Relations Breakdown</h5>
+                              <div className="text-sm space-y-2">
+                                <div className="text-gray-600">Found {chunk.frequency}x (Rank #{chunk.frequency_rank})</div>
+                                <div className="text-gray-600">Questions: {chunk.questions.join(', ')}</div>
+
+                                {/* Data table with counts and percentages */}
+                                <div className="relative overflow-x-auto">
+                                  <button
+                                    type="button"
+                                    aria-label="Help"
+                                    className="absolute -top-3 right-0 w-5 h-5 rounded-full bg-white ring-1 ring-gray-200 text-gray-600 hover:bg-gray-50 text-[10px] flex items-center justify-center z-10"
+                                    onMouseEnter={() => setHelpCardKey(`${chunk.doc_id}-${index}`)}
+                                    onMouseLeave={() => setHelpCardKey(null)}
+                                  >
+                                    ?
+                                  </button>
+                                  {(() => {
+                                    const gtTotal = (chunk.gt_entailments || 0) + (chunk.gt_neutrals || 0) + (chunk.gt_contradictions || 0);
+                                    const rTotal = (chunk.response_entailments || 0) + (chunk.response_neutrals || 0) + (chunk.response_contradictions || 0);
+                                    const pct = (v: number, t: number) => t > 0 ? Math.round((v / t) * 100) : 0;
+                                    const bg = (color: 'green'|'gray'|'red', p: number) => {
+                                      const a = 0.08 + (Math.min(Math.max(p, 0), 100) / 100) * 0.42; // 0.08..0.50
+                                      if (color === 'green') return `rgba(16,185,129,${a.toFixed(2)})`;
+                                      if (color === 'gray') return `rgba(156,163,175,${a.toFixed(2)})`;
+                                      return `rgba(239,68,68,${a.toFixed(2)})`;
+                                    };
+                                    return (
+                                      <table className="min-w-full text-xs border border-gray-200 rounded">
+                                        <thead>
+                                          <tr className="bg-white">
+                                            <th className="px-3 py-2 text-left text-gray-700 font-medium">Outcome</th>
+                                            <th className="px-3 py-2 text-left text-green-700 font-medium">Entailments</th>
+                                            <th className="px-3 py-2 text-left text-gray-700 font-medium">Neutrals</th>
+                                            <th className="px-3 py-2 text-left text-red-700 font-medium">Contradictions</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="bg-white">
+                                          <tr className="border-t border-gray-200">
+                                            <td className="px-3 py-2 align-top">
+                                              <div className="font-medium text-gray-800">Ground Truth</div>
+                                              <div className="text-gray-500">Retriever</div>
+                                            </td>
+                                            <td className="px-3 py-2" style={{ backgroundColor: bg('green', pct(chunk.gt_entailments || 0, gtTotal)) }}>
+                                              <span className="text-green-700 font-medium">{chunk.gt_entailments}</span>
+                                              <span className="text-gray-600"> ({pct(chunk.gt_entailments || 0, gtTotal)}%)</span>
+                                              <div className="text-[11px] text-gray-700 mt-1">Supports claim recall</div>
+                                            </td>
+                                            <td className="px-3 py-2" style={{ backgroundColor: bg('gray', pct(chunk.gt_neutrals || 0, gtTotal)) }}>
+                                              <span className="text-gray-700 font-medium">{chunk.gt_neutrals}</span>
+                                              <span className="text-gray-600"> ({pct(chunk.gt_neutrals || 0, gtTotal)}%)</span>
+                                              <div className="text-[11px] text-gray-700 mt-1">May reduce context precision</div>
+                                            </td>
+                                            <td className="px-3 py-2" style={{ backgroundColor: bg('red', pct(chunk.gt_contradictions || 0, gtTotal)) }}>
+                                              <span className="text-red-700 font-medium">{chunk.gt_contradictions}</span>
+                                              <span className="text-gray-600"> ({pct(chunk.gt_contradictions || 0, gtTotal)}%)</span>
+                                              <div className="text-[11px] text-gray-700 mt-1">May mislead the generator</div>
+                                            </td>
+                                          </tr>
+                                          <tr className="border-t border-gray-200">
+                                            <td className="px-3 py-2 align-top">
+                                              <div className="font-medium text-gray-800">Response</div>
+                                              <div className="text-gray-500">Generator</div>
+                                            </td>
+                                            <td className="px-3 py-2" style={{ backgroundColor: bg('green', pct(chunk.response_entailments || 0, rTotal)) }}>
+                                              <span className="text-green-700 font-medium">{chunk.response_entailments}</span>
+                                              <span className="text-gray-600"> ({pct(chunk.response_entailments || 0, rTotal)}%)</span>
+                                              <div className="text-[11px] text-gray-700 mt-1">Supported by sources (faithfulness)</div>
+                                            </td>
+                                            <td className="px-3 py-2" style={{ backgroundColor: bg('gray', pct(chunk.response_neutrals || 0, rTotal)) }}>
+                                              <span className="text-gray-700 font-medium">{chunk.response_neutrals}</span>
+                                              <span className="text-gray-600"> ({pct(chunk.response_neutrals || 0, rTotal)}%)</span>
+                                              <div className="text-[11px] text-gray-700 mt-1">Lowers information density</div>
+                                            </td>
+                                            <td className="px-3 py-2" style={{ backgroundColor: bg('red', pct(chunk.response_contradictions || 0, rTotal)) }}>
+                                              <span className="text-red-700 font-medium">{chunk.response_contradictions}</span>
+                                              <span className="text-gray-600"> ({pct(chunk.response_contradictions || 0, rTotal)}%)</span>
+                                              <div className="text-[11px] text-gray-700 mt-1">Unsupported statements (hallucination)</div>
+                                            </td>
+                                          </tr>
+                                        </tbody>
+                                      </table>
+                                    );
+                                  })()}
                                 </div>
-                                <div className="text-gray-600 ml-3">
-                                  Questions: {chunk.questions.join(', ')}
-                                </div>
-                                
-                                <div className="grid grid-cols-2 gap-3">
-                                  {/* Ground Truth Sub-box */}
-                                  <div className="bg-gray-50 p-3 rounded border border-gray-300">
-                                    <div className="font-medium text-gray-800 mb-1">Ground Truth Relations:</div>
-                                    <div className="text-gray-600 ml-2 text-xs">
-                                      {chunk.gt_entailments} Entailments, {chunk.gt_neutrals} Neutral, <span className={`${chunk.gt_contradictions > 0 ? 'text-red-600 font-medium' : ''}`}>{chunk.gt_contradictions} Contradictions</span>
-                                      <div className="font-medium">Rate: {(chunk.gt_entailment_rate * 100).toFixed(1)}%</div>
+
+                                {/* Help overlay (does not change table size) */}
+                                {helpCardKey === `${chunk.doc_id}-${index}` && (
+                                  <div className="absolute top-0 right-0 translate-y-8 z-20 w-80 max-w-xs bg-white border border-gray-200 shadow-lg rounded p-3 text-[11px] text-gray-700">
+                                    <div className="font-medium text-gray-900 mb-1">What these outcomes mean</div>
+                                    <div className="mb-1">
+                                      <div className="font-medium text-gray-800">Ground Truth (Retriever)</div>
+                                      <div className="text-green-700">Entailments: Retriever found relevant evidence; contributes to claim-level recall.</div>
+                                      <div className="text-gray-700">Neutrals: Irrelevant content; can reduce context precision and occupy context space.</div>
+                                      <div className="text-red-700">Contradictions: Conflicting content; may mislead the generator.</div>
+                                    </div>
+                                    <div>
+                                      <div className="font-medium text-gray-800">Response (Generator)</div>
+                                      <div className="text-green-700">Entailments: Statements supported by sources (faithful generation).</div>
+                                      <div className="text-gray-700">Neutrals: Non-contributory content; lowers information density.</div>
+                                      <div className="text-red-700">Contradictions: Unsupported statements (hallucination).</div>
                                     </div>
                                   </div>
-                                  
-                                  {/* Response Sub-box */}
-                                  <div className="bg-gray-50 p-3 rounded border border-gray-300">
-                                    <div className="font-medium text-gray-800 mb-1">Response Relations:</div>
-                                    <div className="text-gray-600 ml-2 text-xs">
-                                      {chunk.response_entailments} Entailments, {chunk.response_neutrals} Neutral, <span className={`${chunk.response_contradictions > 0 ? 'text-red-600 font-medium' : ''}`}>{chunk.response_contradictions} Contradictions</span>
-                                      <div className="font-medium">Rate: {(chunk.response_entailment_rate * 100).toFixed(1)}%</div>
-                                    </div>
-                                  </div>
-                                </div>
+                                )}
                               </div>
                             </div>
                           </div>
