@@ -45,6 +45,7 @@ const MetricsByQuestion: React.FC<MetricsByQuestionProps> = ({ questions, onSele
         dataPoint[`${key}_raw`] = value;
       });
 
+
       return dataPoint;
     });
   }, [questions]);

@@ -95,7 +95,7 @@ const MetricsDisplay: React.FC<MetricsDisplayProps> = ({
     {
       title: "Retriever Metrics",
       metrics: [
-        { label: "Claim Recall", key: "claim_recall", tooltip: "Claim-level recall by the retrieved context" },
+        { label: "Claim Recall", key: "claim_recall", tooltip: "Proportion of ground truth claims covered by retrieved chunks." },
         { label: "Context Precision", key: "context_precision", tooltip: "Portion of relevant chunks in retrieved context" },
       ],
       data: metrics.retriever_metrics,
