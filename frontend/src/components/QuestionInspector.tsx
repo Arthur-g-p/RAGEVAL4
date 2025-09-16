@@ -476,43 +476,7 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
         />
       </div>
 
-      {/* Claim Counts Summary */}
-      <div className="bg-white border rounded-lg p-6 mb-8">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Claims Summary</h3>
-        <div className="relative overflow-x-auto">
-          <table className="min-w-full text-sm border border-gray-200 rounded">
-            <thead>
-              <tr className="bg-gray-50">
-                <th className="px-3 py-2 text-left text-gray-700 font-medium">Category</th>
-                <th className="px-3 py-2 text-left text-gray-700 font-medium">Total</th>
-                <th className="px-3 py-2 text-left text-green-700 font-medium">Verified/Backed</th>
-                <th className="px-3 py-2 text-left text-gray-700 font-medium">Missing/Unbacked</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white">
-              <tr className="border-t border-gray-200">
-                <td className="px-3 py-2">
-                  <div className="font-medium text-gray-800">Ground Truth</div>
-                  <div className="text-xs text-gray-500">Verified = entailed by any chunk</div>
-                </td>
-                <td className="px-3 py-2">{claimSummary.gt_total}</td>
-                <td className="px-3 py-2 text-green-700 font-medium">{claimSummary.gt_verified}</td>
-                <td className="px-3 py-2">{claimSummary.gt_missing}</td>
-              </tr>
-              <tr className="border-t border-gray-200">
-                <td className="px-3 py-2">
-                  <div className="font-medium text-gray-800">Response</div>
-                  <div className="text-xs text-gray-500">Backed = entailed by any chunk</div>
-                </td>
-                <td className="px-3 py-2">{claimSummary.resp_total}</td>
-                <td className="px-3 py-2 text-green-700 font-medium">{claimSummary.resp_backed}</td>
-                <td className="px-3 py-2">{claimSummary.resp_unbacked}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
+      {/* Retrieved Context Section */}
       {question.retrieved_context && question.retrieved_context.length > 0 && (
         <div className="bg-white border rounded-lg p-6">
           <div className="flex justify-between items-center mb-4">
