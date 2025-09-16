@@ -11,19 +11,26 @@ interface MetricsByQuestionProps {
 
 const DEFAULT_VISIBLE_METRICS = [
   'precision',
-  'recall',
-  'f1',
-  'faithfulness',
-  'context_utilization',
-  'hallucination'
+  'recall'
 ];
+
+const STORAGE_KEY = 'rageval_metrics_by_question_visible';
 
 const METRIC_COLORS = [
   '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#F97316'
 ];
 
 const MetricsByQuestion: React.FC<MetricsByQuestionProps> = ({ questions, onSelectQuestion }) => {
-  const [visibleMetrics, setVisibleMetrics] = useState<Set<string>>(new Set(DEFAULT_VISIBLE_METRICS));
+  const [visibleMetrics, setVisibleMetrics] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) return new Set(arr as string[]);
+      }
+    } catch {}
+    return new Set(DEFAULT_VISIBLE_METRICS);
+  });
 
   React.useEffect(() => {
     logger.info('MetricsByQuestion rendered successfully');
@@ -57,6 +64,43 @@ const MetricsByQuestion: React.FC<MetricsByQuestionProps> = ({ questions, onSele
     });
     return Array.from(metricSet).sort();
   }, [questions]);
+
+  // Persist visible metrics and reconcile with available metrics
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(visibleMetrics)));
+    } catch {}
+  }, [visibleMetrics]);
+
+  React.useEffect(() => {
+    const allowed = new Set(allMetrics);
+    const current = Array.from(visibleMetrics).filter(m => allowed.has(m));
+    // If no valid selection, default to precision/recall when available
+    if (current.length === 0) {
+      const next = DEFAULT_VISIBLE_METRICS.filter(m => allowed.has(m));
+      if (next.length > 0) setVisibleMetrics(new Set(next));
+      return;
+    }
+    if (current.length !== visibleMetrics.size) {
+      setVisibleMetrics(new Set(current));
+    }
+  }, [allMetrics]);
+
+  const groupedMetricKeys = useMemo(() => {
+    const groupDefs = [
+      { title: 'Overall', keys: ['precision', 'recall', 'f1'] },
+      { title: 'Retriever', keys: ['claim_recall', 'context_precision'] },
+      { title: 'Generator', keys: ['context_utilization', 'faithfulness', 'hallucination', 'self_knowledge', 'noise_sensitivity_in_relevant', 'noise_sensitivity_in_irrelevant'] },
+    ];
+    const groups = groupDefs.map(g => ({
+      title: g.title,
+      metrics: g.keys.filter(k => allMetrics.includes(k)),
+    })).filter(g => g.metrics.length > 0);
+    const assigned = new Set(groups.flatMap(g => g.metrics));
+    const other = allMetrics.filter(k => !assigned.has(k));
+    if (other.length > 0) groups.push({ title: 'Other', metrics: other });
+    return groups;
+  }, [allMetrics]);
 
   const toggleMetric = (metric: string) => {
     const newVisible = new Set(visibleMetrics);
@@ -115,19 +159,26 @@ const MetricsByQuestion: React.FC<MetricsByQuestionProps> = ({ questions, onSele
         
         <div className="mb-4">
           <h3 className="text-sm font-medium text-gray-700 mb-2">Visible Metrics:</h3>
-          <div className="flex flex-wrap gap-2">
-            {allMetrics.map((metric) => (
-              <button
-                key={metric}
-                onClick={() => toggleMetric(metric)}
-                className={`px-3 py-1 text-xs rounded-full transition-colors ${
-                  visibleMetrics.has(metric)
-                    ? 'bg-blue-100 text-blue-800 border border-blue-300'
-                    : 'bg-gray-100 text-gray-600 border border-gray-300'
-                }`}
-              >
-                {metric}
-              </button>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {groupedMetricKeys.map(group => (
+              <div key={group.title} className="bg-white p-6 rounded-2xl shadow-md border-t-4 border-gray-200 transition-all duration-200 hover:transform hover:-translate-y-1 hover:shadow-lg">
+                <h4 className="text-md font-semibold text-gray-800 mb-3">{group.title}</h4>
+                <div className="flex flex-wrap gap-2">
+                  {group.metrics.map(metric => (
+                    <button
+                      key={metric}
+                      onClick={() => toggleMetric(metric)}
+                      className={`px-3 py-1 text-xs rounded-full transition-colors ${
+                        visibleMetrics.has(metric)
+                          ? 'bg-blue-100 text-blue-800 border border-blue-300'
+                          : 'bg-gray-100 text-gray-600 border border-gray-300'
+                      }`}
+                    >
+                      {metric}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
           <p className="text-xs text-gray-500 mt-1">

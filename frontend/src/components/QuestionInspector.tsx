@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Question } from '../types';
 import { logger } from '../utils/logger';
 import MetricsDisplay from './MetricsDisplay';
+import { isIrrelevantFromCounts, isIrrelevantFromSets } from '../utils/relevance';
 
 interface QuestionInspectorProps {
   question: Question;
@@ -100,14 +101,20 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
   const irrelevantChunkCount = React.useMemo(() => {
     try {
       const ctx = question.retrieved_context || [];
-      return ctx.reduce((acc, _chunk, idx) => {
-        const la: any = ctx[idx]?.local_analysis || {};
-        const gtE = typeof la.local_gt_entailments === 'number' ? la.local_gt_entailments : undefined;
-        if (typeof gtE === 'number') {
-          return acc + (gtE > 0 ? 0 : 1);
+      return ctx.reduce((acc, chunk, idx) => {
+        const la: any = chunk?.local_analysis || {};
+        // Prefer local counts if available, otherwise compute from sets
+        if (
+          typeof la.local_gt_entailments === 'number' ||
+          typeof la.local_gt_neutrals === 'number' ||
+          typeof la.local_gt_contradictions === 'number'
+        ) {
+          return (
+            acc + (isIrrelevantFromCounts(la.local_gt_entailments, la.local_gt_neutrals, la.local_gt_contradictions) ? 1 : 0)
+          );
         }
         const sets = getClaimSetsForChunk(idx);
-        return acc + (sets.gt.entailments.length > 0 ? 0 : 1);
+        return acc + (isIrrelevantFromSets(sets) ? 1 : 0);
       }, 0);
     } catch {
       return 0;
@@ -301,19 +308,27 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                         <h4 className="font-semibold text-gray-900">
                           Chunk {index + 1}: {chunk.doc_id}
                         </h4>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-500">
+                          {chunk.text.split(/\s+/).length} words
+                        </span>
                         {(() => {
                           const la: any = chunk?.local_analysis || {};
-                          const gtE = typeof la.local_gt_entailments === 'number' ? la.local_gt_entailments : undefined;
-                          const sets = gtE == null ? getClaimSetsForChunk(index) : null;
-                          const isIrrelevant = (typeof gtE === 'number' ? gtE : (sets?.gt.entailments.length || 0)) <= 0;
-                          return isIrrelevant ? (
-                            <span className="ml-2 text-xs text-yellow-600 bg-yellow-50 border border-yellow-200 rounded px-1 py-1">Irrelevant</span>
+                          const hasLocal = (
+                            typeof la.local_gt_entailments === 'number' ||
+                            typeof la.local_gt_neutrals === 'number' ||
+                            typeof la.local_gt_contradictions === 'number'
+                          );
+                          const sets = !hasLocal ? getClaimSetsForChunk(index) : null;
+                          const irrelevant = hasLocal
+                            ? isIrrelevantFromCounts(la.local_gt_entailments, la.local_gt_neutrals, la.local_gt_contradictions)
+                            : isIrrelevantFromSets(sets as any);
+                          return irrelevant ? (
+                            <span className="px-2 py-1 text-xs rounded-full bg-yellow-50 text-yellow-600 border border-yellow-200" title="This chunk was retrieved but is not relevant to the ground truth (Neutral)">Irrelevant</span>
                           ) : null;
                         })()}
                       </div>
-                      <span className="text-sm text-gray-500">
-                        {chunk.text.split(/\s+/).length} words
-                      </span>
                     </div>
                   </div>
                   

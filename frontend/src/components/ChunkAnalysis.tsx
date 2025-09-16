@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Question } from '../types';
 import { logger } from '../utils/logger';
+import { isIrrelevantFromCounts } from '../utils/relevance';
 
 interface ChunkAnalysisProps {
   questions: Question[];
@@ -226,6 +227,18 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
 
     return { lengthDistributionData, duplicateGroups, stats, enhancedChunkData };
   }, [questions, topN]);
+
+  // Count chunks that are not relevant w.r.t. ground truth (purely Neutral, no Entailments or Contradictions)
+  const notRelevantCount = useMemo(() => {
+    if (!Array.isArray(enhancedChunkData)) return 0;
+    try {
+      return enhancedChunkData.filter(c =>
+        isIrrelevantFromCounts(c.gt_entailments, c.gt_neutrals, c.gt_contradictions)
+      ).length;
+    } catch {
+      return 0;
+    }
+  }, [enhancedChunkData]);
 
   // Prepare data for stacked bar chart and expandable section
   const toSafeId = (s: string) => String(s || '').substring(0, 80).replace(/[^a-zA-Z0-9\-_]/g, '_');
@@ -595,6 +608,9 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
             </button>
           ))}
         </div>
+        <div className="text-sm text-gray-600 mb-6">
+          Of {Array.isArray(enhancedChunkData) ? enhancedChunkData.length : 0} chunks, {notRelevantCount} are not relevant
+        </div>
       </div>
 
       {selectedView === 'frequency' && (
@@ -906,9 +922,23 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
                               <h4 className="font-semibold text-gray-900">
                                 Rank #{chunk.frequency_rank}: {chunk.doc_id}
                               </h4>
-                              <span className="text-sm text-gray-500">
-                                {chunk.wordCount} words
-                              </span>
+                              {(() => {
+                                const isIrrelevant = isIrrelevantFromCounts(
+                                  chunk.gt_entailments,
+                                  chunk.gt_neutrals,
+                                  chunk.gt_contradictions
+                                );
+                                return (
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm text-gray-500">{chunk.wordCount} words</span>
+                                    {isIrrelevant && (
+                                      <span className="px-2 py-1 text-xs rounded-full bg-yellow-50 text-yellow-600 border border-yellow-200" title="This chunk was retrieved but is not relevant to the ground truth (Neutral)">
+                                        Irrelevant
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
                           
