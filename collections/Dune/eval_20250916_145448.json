@@ -1,0 +1,298 @@
+{
+    "results": [
+        {
+            "query_id": "0",
+            "query": "On which planet are the sardaukar being trained?",
+            "gt_answer": "The Sardaukar are trained on the planet Salusa Secundus, the Padishah Emperor's prison planet, known for its harsh and brutal environment that breeds only the strongest and most ferocious fighters.",
+            "response": "The Sardaukar are trained on **Salusa Secundus**.",
+            "retrieved_context": [
+                {
+                    "doc_id": "92f1189e-1f65-45ce-ab06-39f9a1a64eb7",
+                    "text": "BENE GESSERIT TRAINING 190\nWay show this philosophy . The first \nshow s the necessit y for discipline : \"To \nuse raw powe r is to make yoursel f \ninfinitel y vulnerabl e to g reate r \npowers, \" and th..."
+                },
+                {
+                    "doc_id": "92f1189e-1f65-45ce-ab06-39f9a1a64eb7",
+                    "text": " by the environmen t than by tactica l \nconsiderations . Torped os were \nsimilarl y affected . Shield s becam e \nunreliable, bu t lasgun s did not therefor e \nbecom e more usefu l since the burst s \nw..."
+                },
+                {
+                    "doc_id": "92f1189e-1f65-45ce-ab06-39f9a1a64eb7",
+                    "text": " \ncontrol s my reality. \" The trainin g itself \nis based on a series of progressiv e \nexercises , lastin g approximatel y ten \nyears , whic h give the studen t powe r to\ncontro l hersel f mentally , p..."
+                },
+                {
+                    "doc_id": "92f1189e-1f65-45ce-ab06-39f9a1a64eb7",
+                    "text": "us e dispatche d this unit \nbefor e they could implemen t their \ntheory.\nMuch time was neede d to\ncomplet e the globa l network , during \nwhic h wome n gained some publi c \npower, eve n governin g for..."
+                },
+                {
+                    "doc_id": "92f1189e-1f65-45ce-ab06-39f9a1a64eb7",
+                    "text": " electe d her to the \nGenera l Counci l seem s to have come \nfrom the libera l and radica l factions . \nThe record s show Anteac as being an \nintellig ent woma n fully capabl e of \nmakin g independen ..."
+                }
+            ],
+            "response_claims": [
+                [
+                    "Sardaukar",
+                    "trained on",
+                    "Salusa Secundus"
+                ]
+            ],
+            "gt_answer_claims": [
+                [
+                    "Sardaukar",
+                    "trained on",
+                    "Salusa Secundus"
+                ],
+                [
+                    "Salusa Secundus",
+                    "is",
+                    "Padishah Emperor's prison planet"
+                ],
+                [
+                    "Salusa Secundus",
+                    "known for",
+                    "harsh and brutal environment"
+                ],
+                [
+                    "Harsh and brutal environment",
+                    "breeds",
+                    "strongest and most ferocious fighters"
+                ]
+            ],
+            "answer2response": [
+                "Entailment"
+            ],
+            "response2answer": [
+                "Entailment",
+                "Neutral",
+                "Neutral",
+                "Neutral"
+            ],
+            "retrieved2response": [
+                [
+                    "Neutral",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral"
+                ]
+            ],
+            "retrieved2answer": [
+                [
+                    "Neutral",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral"
+                ],
+                [
+                    "Neutral",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral"
+                ],
+                [
+                    "Neutral",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral"
+                ],
+                [
+                    "Neutral",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral"
+                ]
+            ],
+            "metrics": {
+                "recall": 0.25,
+                "precision": 1.0,
+                "noise_sensitivity_in_relevant": 0.0,
+                "noise_sensitivity_in_irrelevant": 0.0,
+                "f1": 0.4,
+                "claim_recall": 0.0,
+                "context_precision": 0.0,
+                "faithfulness": 0.0,
+                "hallucination": 0.0,
+                "self_knowledge": 1.0,
+                "context_utilization": 0.0
+            }
+        },
+        {
+            "query_id": "1",
+            "query": "What are the names of the children of paul atreides?",
+            "gt_answer": "The children are being called Leto II Atreides and Ghanima Atreides.",
+            "response": "Based on the provided context from *The Dune Encyclopedia*, the children of **Paul Atreides (Muad\u2019Dib)** are:  \n\n- **Leto II Atreides** (the Summa-Emperor, the Immortal, also known as the God Emperor)  \n- **Ghanima Atreides**  \n\nThese are referred to in the text as Paul\u2019s **twin children**.  \n\n\u2705 So, the names of Paul Atreides\u2019 children are **Leto II and Ghanima**.",
+            "retrieved_context": [
+                {
+                    "doc_id": "92f1189e-1f65-45ce-ab06-39f9a1a64eb7",
+                    "text": "ATREIDES, PAUL 115\nremain s are traditionall y assume d \ninterre d in the long-sough t Skull \nTomb1or Skull Place on Arrakis . His \nmothe r was the Lady Jessi ca \nHarkonne n (10154 -10256) , the basta..."
+                },
+                {
+                    "doc_id": "92f1189e-1f65-45ce-ab06-39f9a1a64eb7",
+                    "text": " was such a man, born of Hous e Atreides, \nwho h ad remarkabl e power , so \nremarkabl e that throug h his acts and \nthose of his son, Let o II, the historie s of \nall the world s were foreve r changed..."
+                },
+                {
+                    "doc_id": "92f1189e-1f65-45ce-ab06-39f9a1a64eb7",
+                    "text": "ATREIDES, GHANIMA 81\nThe first three girls, Eleanor, \nHelene , and Elaine , were born during \nthe perio d when Ghanim a was worki ng \nwith Voice s from the immediat e past. \n(Year s later, when she di..."
+                },
+                {
+                    "doc_id": "92f1189e-1f65-45ce-ab06-39f9a1a64eb7",
+                    "text": "ATREIDES, PAUL 121\nCorrino , and Bene Gesseri t\nconfederate s was stage d in 102051Paul \nsurvive d the attack , but was blinde d in \nit; and, as well he knew , to be a blind \nFreme n was to be condemn..."
+                },
+                {
+                    "doc_id": "92f1189e-1f65-45ce-ab06-39f9a1a64eb7",
+                    "text": "a \nacces s to the lives ofall Frem en \nReveren d Mothers , it also subjecte d the \npsychicall y defensele ss fetus to the \nsame a wareness . This inadverten t \nassaul t on Alia was the cause of her \na..."
+                }
+            ],
+            "response_claims": [
+                [
+                    "Paul Atreides",
+                    "has child",
+                    "Leto II Atreides"
+                ],
+                [
+                    "Paul Atreides",
+                    "has child",
+                    "Ghanima Atreides"
+                ],
+                [
+                    "Leto II Atreides",
+                    "also known as",
+                    "the Summa-Emperor"
+                ],
+                [
+                    "Leto II Atreides",
+                    "also known as",
+                    "the Immortal"
+                ],
+                [
+                    "Leto II Atreides",
+                    "also known as",
+                    "the God Emperor"
+                ],
+                [
+                    "Leto II Atreides and Ghanima Atreides",
+                    "are",
+                    "twin children"
+                ]
+            ],
+            "gt_answer_claims": [
+                [
+                    "Paul Atreides",
+                    "has child",
+                    "Leto II Atreides"
+                ],
+                [
+                    "Paul Atreides",
+                    "has child",
+                    "Ghanima Atreides"
+                ]
+            ],
+            "answer2response": [
+                "Entailment",
+                "Entailment",
+                "Neutral",
+                "Neutral",
+                "Neutral",
+                "Entailment"
+            ],
+            "response2answer": [
+                "Entailment",
+                "Entailment"
+            ],
+            "retrieved2response": [
+                [
+                    "Neutral",
+                    "Entailment",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral"
+                ],
+                [
+                    "Neutral",
+                    "Neutral",
+                    "Entailment",
+                    "Neutral",
+                    "Neutral"
+                ],
+                [
+                    "Neutral",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral"
+                ],
+                [
+                    "Neutral",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral"
+                ],
+                [
+                    "Neutral",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral"
+                ],
+                [
+                    "Neutral",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral"
+                ]
+            ],
+            "retrieved2answer": [
+                [
+                    "Neutral",
+                    "Entailment",
+                    "Neutral",
+                    "Neutral",
+                    "Neutral"
+                ],
+                [
+                    "Neutral",
+                    "Neutral",
+                    "Entailment",
+                    "Neutral",
+                    "Neutral"
+                ]
+            ],
+            "metrics": {
+                "recall": 1.0,
+                "precision": 0.5,
+                "noise_sensitivity_in_relevant": 0.0,
+                "noise_sensitivity_in_irrelevant": 0.0,
+                "f1": 0.6666666666666666,
+                "claim_recall": 1.0,
+                "context_precision": 0.4,
+                "faithfulness": 0.3333333333333333,
+                "hallucination": 0.5,
+                "self_knowledge": 0.16666666666666666,
+                "context_utilization": 1.0
+            }
+        }
+    ],
+    "metrics": {
+        "overall_metrics": {
+            "precision": 75.0,
+            "recall": 62.5,
+            "f1": 53.3
+        },
+        "retriever_metrics": {
+            "claim_recall": 50.0,
+            "context_precision": 20.0
+        },
+        "generator_metrics": {
+            "context_utilization": 50.0,
+            "noise_sensitivity_in_relevant": 0.0,
+            "noise_sensitivity_in_irrelevant": 0.0,
+            "hallucination": 25.0,
+            "self_knowledge": 58.3,
+            "faithfulness": 16.7
+        }
+    }
+}

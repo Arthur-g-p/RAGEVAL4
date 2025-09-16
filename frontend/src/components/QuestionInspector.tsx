@@ -12,6 +12,8 @@ interface QuestionInspectorProps {
 
 const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQuestions, onSelectQuestion }) => {
   const [isContextExpanded, setIsContextExpanded] = useState(false);
+  const [isGTClaimsExpanded, setIsGTClaimsExpanded] = useState(false);
+  const [isResponseClaimsExpanded, setIsResponseClaimsExpanded] = useState(false);
 
   React.useEffect(() => {
     logger.info(`QuestionInspector rendered for question ${question.query_id}`);
@@ -24,6 +26,162 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
   };
 
   const wordDiff = getWordDifference();
+
+  // Robust claim extraction to handle different shapes:
+  // - string[]
+  // - { text | claim | content | value }[]
+  // - { claims: [...] }
+  const extractClaims = (raw: any): string[] => {
+    try {
+      if (!raw) return [];
+      // Nested { claims: [...] }
+      if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        if (Array.isArray(raw.claims)) return extractClaims(raw.claims);
+      }
+      // Array case
+      if (Array.isArray(raw)) {
+        const out: string[] = [];
+        for (const item of raw) {
+          if (typeof item === 'string') {
+            out.push(item);
+          } else if (Array.isArray(item)) {
+            // Tuple/sequence claim, e.g., [subject, relation, object]
+            const parts = item.map((p: any) => {
+              if (typeof p === 'string') return p;
+              if (p && typeof p === 'object') {
+                return (p as any).text ?? (p as any).claim ?? (p as any).content ?? (p as any).value ?? '';
+              }
+              return String(p ?? '');
+            }).filter((s: any) => typeof s === 'string' && s.trim().length > 0);
+            if (parts.length > 0) out.push(parts.join(' — '));
+          } else if (item && typeof item === 'object') {
+            const cand = (item as any).text ?? (item as any).claim ?? (item as any).content ?? (item as any).value ?? null;
+            if (cand != null) out.push(String(cand));
+          }
+        }
+        return out.filter(s => typeof s === 'string' && s.trim().length > 0);
+      }
+      // Stringified JSON array fallback
+      if (typeof raw === 'string') {
+        const trimmed = raw.trim();
+        if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            return extractClaims(parsed);
+          } catch {
+            // fall through
+          }
+        }
+        // delimiter-based fallback (lines)
+        if (trimmed.includes('\n')) {
+          return trimmed.split('\n').map(s => s.trim()).filter(Boolean);
+        }
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  };
+
+  const gtClaimsList = React.useMemo(() => {
+    const q: any = question as any;
+    const raw = q?.gt_answer_claims ?? q?.gt_claims ?? q?.ground_truth_claims ?? q?.gt_answer?.claims ?? q?.ground_truth?.claims;
+    return extractClaims(raw);
+  }, [question]);
+
+  const responseClaimsList = React.useMemo(() => {
+    const q: any = question as any;
+    const raw = q?.response_claims ?? q?.resp_claims ?? q?.answer_claims ?? q?.response?.claims;
+    return extractClaims(raw);
+  }, [question]);
+
+  // Helper to safely access relation at [chunkIdx][claimIdx] or [claimIdx][chunkIdx]
+  const relationAt = (matrix: any[], chunkIdx: number, claimIdx: number): any => {
+    try {
+      const byChunk = Array.isArray(matrix?.[chunkIdx]) ? matrix[chunkIdx] : undefined;
+      if (Array.isArray(byChunk) && byChunk.length > claimIdx) return byChunk[claimIdx];
+      const byClaim = Array.isArray(matrix?.[claimIdx]) ? matrix[claimIdx] : undefined;
+      if (Array.isArray(byClaim) && byClaim.length > chunkIdx) return byClaim[chunkIdx];
+      return undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  type ClaimStatus = 'entailed' | 'neutral' | 'contradiction';
+
+  const mapRelToStatus = (rel: any): ClaimStatus => {
+    const s = String(rel ?? '').toLowerCase();
+    if (s === 'entailment') return 'entailed';
+    if (s === 'contradiction') return 'contradiction';
+    return 'neutral';
+  };
+
+  // Map direct claim-level relation arrays to statuses, ignoring chunk matrices
+  const mapDirectStatuses = (relations: any, targetLen: number): ClaimStatus[] => {
+    const arr: any[] = Array.isArray(relations) ? relations : [];
+    const statuses: ClaimStatus[] = [];
+    for (let i = 0; i < targetLen; i++) {
+      const raw = arr[i];
+      const rel = Array.isArray(raw) ? raw[0] : raw;
+      statuses.push(mapRelToStatus(rel));
+    }
+    return statuses;
+  };
+
+  const getGTClaimTooltip = (status: ClaimStatus): string => {
+    switch (status) {
+      case 'entailed':
+        return 'This claim can be entailed (i.e. found) in the response and is therefore covered in the answer. Metric: Recall (arrow up ▲, green)';
+      case 'contradiction':
+        return 'This claim is contradicting at least one claim in the response, which makes the responses at least partially incorrect. Metric: Recall (arrow down ▼) Note: this is treated the same as neutral!';
+      case 'neutral':
+      default:
+        return 'This claim cannot be found in the response and is therefore missing. Metric: Recall (arrow down ▼, red)';
+    }
+  };
+
+  const getRespClaimTooltip = (status: ClaimStatus): string => {
+    switch (status) {
+      case 'entailed':
+        return 'This claim can be entailed (i.e. found) in the ground truth and is therefore a correct and wanted claim. Metric: Precision (arrow up ▲, green)';
+      case 'contradiction':
+        return 'This claim is contradicting at least one claim in the ground truth and is therefore wrong. Metric: Precision (arrow down ▼, red) Note: this is treated the same as neutral!';
+      case 'neutral':
+      default:
+        return 'This claim cannot be found in the ground truth and is therefore not asked for. Metric: Precision (arrow down ▼, red)';
+    }
+  };
+
+  const gtClaimStatuses = React.useMemo<ClaimStatus[]>(() => {
+    try {
+      const resp2ans = (question as any)?.response2answer;
+      return mapDirectStatuses(resp2ans, gtClaimsList.length);
+    } catch {
+      return gtClaimsList.map(() => 'neutral');
+    }
+  }, [question, gtClaimsList]);
+
+  const respClaimStatuses = React.useMemo<ClaimStatus[]>(() => {
+    try {
+      const ans2resp = (question as any)?.answer2response;
+      return mapDirectStatuses(ans2resp, responseClaimsList.length);
+    } catch {
+      return responseClaimsList.map(() => 'neutral');
+    }
+  }, [question, responseClaimsList]);
+
+  const gtCounts = React.useMemo(() => {
+    const counts = { entailed: 0, neutral: 0, contradiction: 0 };
+    gtClaimStatuses.forEach(s => { (counts as any)[s] += 1; });
+    return counts;
+  }, [gtClaimStatuses]);
+
+  const respCounts = React.useMemo(() => {
+    const counts = { entailed: 0, neutral: 0, contradiction: 0 };
+    respClaimStatuses.forEach(s => { (counts as any)[s] += 1; });
+    return counts;
+  }, [respClaimStatuses]);
 
   // Transform question metrics into the structure expected by MetricsDisplay
   const getQuestionMetrics = () => {
@@ -50,8 +208,8 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
   };
 
   const getClaimSetsForChunk = (chunkIndex: number) => {
-    const gtClaims = Array.isArray((question as any).gt_answer_claims) ? (question as any).gt_answer_claims as string[] : [];
-    const respClaims = Array.isArray((question as any).response_claims) ? (question as any).response_claims as string[] : [];
+    const gtClaims = gtClaimsList;
+    const respClaims = responseClaimsList;
     const r2a = Array.isArray((question as any).retrieved2answer) ? (question as any).retrieved2answer as any[] : [];
     const r2r = Array.isArray((question as any).retrieved2response) ? (question as any).retrieved2response as any[] : [];
 
@@ -124,8 +282,8 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
   // Claim-level summary across the whole question (counts only)
   const claimSummary = React.useMemo(() => {
     try {
-      const gtClaims = Array.isArray((question as any).gt_answer_claims) ? (question as any).gt_answer_claims as string[] : [];
-      const respClaims = Array.isArray((question as any).response_claims) ? (question as any).response_claims as string[] : [];
+      const gtClaims = gtClaimsList;
+      const respClaims = responseClaimsList;
       const r2a = Array.isArray((question as any).retrieved2answer) ? (question as any).retrieved2answer as any[] : [];
       const r2r = Array.isArray((question as any).retrieved2response) ? (question as any).retrieved2response as any[] : [];
       const chunkCount = Array.isArray(question.retrieved_context) ? question.retrieved_context.length : 0;
@@ -170,7 +328,7 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
     } catch {
       return { gt_total: 0, gt_verified: 0, gt_missing: 0, resp_total: 0, resp_backed: 0, resp_unbacked: 0 };
     }
-  }, [question]);
+  }, [question, gtClaimsList, responseClaimsList]);
 
   return (
     <div className="p-6">
@@ -217,6 +375,44 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
           <div className="mt-3 text-sm text-gray-600">
             Length: {question.gt_answer ? question.gt_answer.split(/\s+/).length : 0} words
           </div>
+          <div className="mt-3">
+            <button
+              onClick={() => setIsGTClaimsExpanded(!isGTClaimsExpanded)}
+              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+            >
+              {isGTClaimsExpanded ? 'Collapse Claims' : `Expand Claims (${gtClaimsList.length})`}
+            </button>
+            {isGTClaimsExpanded && (
+              <div className="mt-2 bg-gray-50 p-4 rounded border">
+                <h4 className="text-sm font-semibold text-gray-800 mb-3">Ground Truth Claims</h4>
+                {gtClaimsList.length > 0 ? (
+                  <>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      <span className="px-2 py-1 text-xs rounded-full bg-green-50 text-green-700 border border-green-200">Entailed {gtCounts.entailed}</span>
+                      <span className="px-2 py-1 text-xs rounded-full bg-gray-50 text-gray-700 border border-gray-200">Neutral {gtCounts.neutral}</span>
+                      <span className="px-2 py-1 text-xs rounded-full bg-red-50 text-red-700 border border-red-200">Contradictions {gtCounts.contradiction}</span>
+                    </div>
+                    <ul className="list-none space-y-2 text-sm">
+                      {gtClaimsList.map((c, i) => {
+                        const status = gtClaimStatuses[i] as ClaimStatus;
+                        const base = 'whitespace-pre-wrap rounded-md px-3 py-2 border cursor-help';
+                        const cls = status === 'entailed'
+                          ? `${base} bg-green-50 border-green-200 text-green-700`
+                          : status === 'contradiction'
+                            ? `${base} bg-red-50 border-red-200 text-red-700`
+                            : `${base} bg-gray-50 border-gray-200 text-gray-700`;
+                        return (
+                          <li key={`gt-claim-${i}`} className={cls} title={getGTClaimTooltip(status)}>{String(c || '')}</li>
+                        );
+                      })}
+                    </ul>
+                  </>
+                ) : (
+                  <div className="text-sm text-gray-500">No claims extracted</div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="border p-6 rounded-lg">
@@ -227,6 +423,44 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
           <div className="mt-3 text-sm text-gray-600">
             Length: {question.response.split(/\s+/).length} words • 
             {wordDiff > 0 ? ` +${wordDiff}` : wordDiff < 0 ? ` ${wordDiff}` : ' ±0'} vs GT
+          </div>
+          <div className="mt-3">
+            <button
+              onClick={() => setIsResponseClaimsExpanded(!isResponseClaimsExpanded)}
+              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+            >
+              {isResponseClaimsExpanded ? 'Collapse Claims' : `Expand Claims (${responseClaimsList.length})`}
+            </button>
+            {isResponseClaimsExpanded && (
+              <div className="mt-2 bg-gray-50 p-4 rounded border">
+                <h4 className="text-sm font-semibold text-gray-800 mb-3">Response Claims</h4>
+                {responseClaimsList.length > 0 ? (
+                  <>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      <span className="px-2 py-1 text-xs rounded-full bg-green-50 text-green-700 border border-green-200">Entailed {respCounts.entailed}</span>
+                      <span className="px-2 py-1 text-xs rounded-full bg-gray-50 text-gray-700 border border-gray-200">Neutral {respCounts.neutral}</span>
+                      <span className="px-2 py-1 text-xs rounded-full bg-red-50 text-red-700 border border-red-200">Contradictions {respCounts.contradiction}</span>
+                    </div>
+                    <ul className="list-none space-y-2 text-sm">
+                      {responseClaimsList.map((c, i) => {
+                        const status = respClaimStatuses[i] as ClaimStatus;
+                        const base = 'whitespace-pre-wrap rounded-md px-3 py-2 border cursor-help';
+                        const cls = status === 'entailed'
+                          ? `${base} bg-green-50 border-green-200 text-green-700`
+                          : status === 'contradiction'
+                            ? `${base} bg-red-50 border-red-200 text-red-700`
+                            : `${base} bg-gray-50 border-gray-200 text-gray-700`;
+                        return (
+                          <li key={`resp-claim-${i}`} className={cls} title={getRespClaimTooltip(status)}>{String(c || '')}</li>
+                        );
+                      })}
+                    </ul>
+                  </>
+                ) : (
+                  <div className="text-sm text-gray-500">No claims extracted</div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
