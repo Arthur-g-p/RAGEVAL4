@@ -14,6 +14,7 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
   const [isContextExpanded, setIsContextExpanded] = useState(false);
   const [isGTClaimsExpanded, setIsGTClaimsExpanded] = useState(false);
   const [isResponseClaimsExpanded, setIsResponseClaimsExpanded] = useState(false);
+  const [isChunksExpanded, setIsChunksExpanded] = useState(true);
 
   React.useEffect(() => {
     logger.info(`QuestionInspector rendered for question ${question.query_id}`);
@@ -354,113 +355,165 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8 pb-6 border-b border-gray-200">
-        <div className="border p-6 rounded-lg">
-          <h3 className="text-lg font-semibold mb-3">User Query</h3>
+      {/* Row 1: Centered User Query */}
+      <div className="mb-8 pb-6 border-b border-gray-200">
+        <div className="max-w-3xl mx-auto border p-6 rounded-lg">
+          <h3 className="text-lg font-semibold mb-3 text-center">User Query</h3>
           <div className="bg-gray-50 p-4 rounded border">
-            <p className="text-gray-800 leading-relaxed">{question.query}</p>
+            <p className="text-gray-800 leading-relaxed text-center">{question.query}</p>
           </div>
-          <div className="mt-3 text-sm text-gray-600">
+          <div className="mt-3 text-sm text-gray-600 text-center">
             Length: {question.query.split(/\s+/).length} words
           </div>
         </div>
+      </div>
 
-        <div className="border p-6 rounded-lg">
-          <h3 className="text-lg font-semibold mb-3">Ground Truth Answer</h3>
-          <div className="bg-gray-50 p-4 rounded border">
-            <p className="text-gray-800 leading-relaxed">
-              {question.gt_answer || 'No ground truth answer available'}
-            </p>
+      {/* Row 2: Three-panels horizontal (GT Answer, Retrieved Chunks, System Response) */}
+      <div className="overflow-x-auto mb-8 pb-6 border-b border-gray-200">
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 3fr 2fr', gap: '1.5rem', minWidth: '1200px' }}>
+          {/* Panel A: Ground Truth Answer (2 units) */}
+          <div className="bg-white border p-6 rounded-lg">
+            <h3 className="text-lg font-semibold mb-3">Ground Truth Answer</h3>
+            <div className="bg-gray-50 p-4 rounded border">
+              <p className="text-gray-800 leading-relaxed">
+                {question.gt_answer || 'No ground truth answer available'}
+              </p>
+            </div>
+            <div className="mt-3 text-sm text-gray-600">
+              Length: {question.gt_answer ? question.gt_answer.split(/\s+/).length : 0} words
+            </div>
+            <div className="mt-3">
+              <button
+                onClick={() => setIsGTClaimsExpanded(!isGTClaimsExpanded)}
+                className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+              >
+                {isGTClaimsExpanded ? 'Collapse Claims' : `Expand Claims (${gtClaimsList.length})`}
+              </button>
+              {isGTClaimsExpanded && (
+                <div className="mt-2 bg-gray-50 p-4 rounded border">
+                  <h4 className="text-sm font-semibold text-gray-800 mb-3">Ground Truth Claims</h4>
+                  {gtClaimsList.length > 0 ? (
+                    <>
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        <span className="px-2 py-1 text-xs rounded-full bg-green-50 text-green-700 border border-green-200">Entailed {gtCounts.entailed}</span>
+                        <span className="px-2 py-1 text-xs rounded-full bg-gray-50 text-gray-700 border border-gray-200">Neutral {gtCounts.neutral}</span>
+                        <span className="px-2 py-1 text-xs rounded-full bg-red-50 text-red-700 border border-red-200">Contradictions {gtCounts.contradiction}</span>
+                      </div>
+                      <ul className="list-none space-y-2 text-sm">
+                        {gtClaimsList.map((c, i) => {
+                          const status = gtClaimStatuses[i] as ClaimStatus;
+                          const base = 'whitespace-pre-wrap rounded-md px-3 py-2 border cursor-help';
+                          const cls = status === 'entailed'
+                            ? `${base} bg-green-50 border-green-200 text-green-700`
+                            : status === 'contradiction'
+                              ? `${base} bg-red-50 border-red-200 text-red-700`
+                              : `${base} bg-gray-50 border-gray-200 text-gray-700`;
+                          return (
+                            <li key={`gt-claim-${i}`} className={cls} title={getGTClaimTooltip(status)}>{String(c || '')}</li>
+                          );
+                        })}
+                      </ul>
+                    </>
+                  ) : (
+                    <div className="text-sm text-gray-500">No claims extracted</div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-          <div className="mt-3 text-sm text-gray-600">
-            Length: {question.gt_answer ? question.gt_answer.split(/\s+/).length : 0} words
-          </div>
-          <div className="mt-3">
-            <button
-              onClick={() => setIsGTClaimsExpanded(!isGTClaimsExpanded)}
-              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-            >
-              {isGTClaimsExpanded ? 'Collapse Claims' : `Expand Claims (${gtClaimsList.length})`}
-            </button>
-            {isGTClaimsExpanded && (
-              <div className="mt-2 bg-gray-50 p-4 rounded border">
-                <h4 className="text-sm font-semibold text-gray-800 mb-3">Ground Truth Claims</h4>
-                {gtClaimsList.length > 0 ? (
-                  <>
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      <span className="px-2 py-1 text-xs rounded-full bg-green-50 text-green-700 border border-green-200">Entailed {gtCounts.entailed}</span>
-                      <span className="px-2 py-1 text-xs rounded-full bg-gray-50 text-gray-700 border border-gray-200">Neutral {gtCounts.neutral}</span>
-                      <span className="px-2 py-1 text-xs rounded-full bg-red-50 text-red-700 border border-red-200">Contradictions {gtCounts.contradiction}</span>
+
+          {/* Panel B: Retrieved Chunks (3 units) */}
+          <div className="bg-gray-50 border p-6 rounded-lg">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-lg font-semibold">Retrieved Chunks {Array.isArray(question.retrieved_context) ? `(${question.retrieved_context.length})` : ''}</h3>
+              <button
+                onClick={() => setIsChunksExpanded(!isChunksExpanded)}
+                className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+              >
+                {isChunksExpanded ? 'Collapse' : 'Expand'}
+              </button>
+            </div>
+
+            {isChunksExpanded && Array.isArray(question.retrieved_context) && question.retrieved_context.length > 0 ? (
+              <div className="space-y-4">
+                {question.retrieved_context.map((chunk, index) => {
+                  const wordCount = (chunk?.text || '').split(/\s+/).filter(Boolean).length;
+                  return (
+                    <div key={index} className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+                      <div className="bg-gray-100 px-4 py-3 border-b border-gray-200">
+                        <div className="flex justify-between items-center">
+                          <div className="text-sm font-semibold text-gray-900">Chunk {index + 1}</div>
+                          <span className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-0.5">{wordCount} words</span>
+                        </div>
+                        <div className="mt-2">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-mono text-xs">
+                            {chunk?.doc_id || 'Unknown'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="p-4">
+                        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                          {chunk?.text || ''}
+                        </p>
+                      </div>
                     </div>
-                    <ul className="list-none space-y-2 text-sm">
-                      {gtClaimsList.map((c, i) => {
-                        const status = gtClaimStatuses[i] as ClaimStatus;
-                        const base = 'whitespace-pre-wrap rounded-md px-3 py-2 border cursor-help';
-                        const cls = status === 'entailed'
-                          ? `${base} bg-green-50 border-green-200 text-green-700`
-                          : status === 'contradiction'
-                            ? `${base} bg-red-50 border-red-200 text-red-700`
-                            : `${base} bg-gray-50 border-gray-200 text-gray-700`;
-                        return (
-                          <li key={`gt-claim-${i}`} className={cls} title={getGTClaimTooltip(status)}>{String(c || '')}</li>
-                        );
-                      })}
-                    </ul>
-                  </>
-                ) : (
-                  <div className="text-sm text-gray-500">No claims extracted</div>
-                )}
+                  );
+                })}
               </div>
+            ) : !isChunksExpanded ? (
+              <div className="text-sm text-gray-600">Click "Expand" to view all retrieved chunks</div>
+            ) : (
+              <div className="text-sm text-gray-500">No chunks retrieved</div>
             )}
           </div>
-        </div>
 
-        <div className="border p-6 rounded-lg">
-          <h3 className="text-lg font-semibold mb-3">System Response</h3>
-          <div className="bg-gray-50 p-4 rounded border">
-            <p className="text-gray-800 leading-relaxed">{question.response}</p>
-          </div>
-          <div className="mt-3 text-sm text-gray-600">
-            Length: {question.response.split(/\s+/).length} words • 
-            {wordDiff > 0 ? ` +${wordDiff}` : wordDiff < 0 ? ` ${wordDiff}` : ' ±0'} vs GT
-          </div>
-          <div className="mt-3">
-            <button
-              onClick={() => setIsResponseClaimsExpanded(!isResponseClaimsExpanded)}
-              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-            >
-              {isResponseClaimsExpanded ? 'Collapse Claims' : `Expand Claims (${responseClaimsList.length})`}
-            </button>
-            {isResponseClaimsExpanded && (
-              <div className="mt-2 bg-gray-50 p-4 rounded border">
-                <h4 className="text-sm font-semibold text-gray-800 mb-3">Response Claims</h4>
-                {responseClaimsList.length > 0 ? (
-                  <>
-                    <div className="flex flex-wrap gap-2 mb-3">
-                      <span className="px-2 py-1 text-xs rounded-full bg-green-50 text-green-700 border border-green-200">Entailed {respCounts.entailed}</span>
-                      <span className="px-2 py-1 text-xs rounded-full bg-gray-50 text-gray-700 border border-gray-200">Neutral {respCounts.neutral}</span>
-                      <span className="px-2 py-1 text-xs rounded-full bg-red-50 text-red-700 border border-red-200">Contradictions {respCounts.contradiction}</span>
-                    </div>
-                    <ul className="list-none space-y-2 text-sm">
-                      {responseClaimsList.map((c, i) => {
-                        const status = respClaimStatuses[i] as ClaimStatus;
-                        const base = 'whitespace-pre-wrap rounded-md px-3 py-2 border cursor-help';
-                        const cls = status === 'entailed'
-                          ? `${base} bg-green-50 border-green-200 text-green-700`
-                          : status === 'contradiction'
-                            ? `${base} bg-red-50 border-red-200 text-red-700`
-                            : `${base} bg-gray-50 border-gray-200 text-gray-700`;
-                        return (
-                          <li key={`resp-claim-${i}`} className={cls} title={getRespClaimTooltip(status)}>{String(c || '')}</li>
-                        );
-                      })}
-                    </ul>
-                  </>
-                ) : (
-                  <div className="text-sm text-gray-500">No claims extracted</div>
-                )}
-              </div>
-            )}
+          {/* Panel C: System Response (2 units) */}
+          <div className="bg-white border p-6 rounded-lg">
+            <h3 className="text-lg font-semibold mb-3">System Response</h3>
+            <div className="bg-gray-50 p-4 rounded border">
+              <p className="text-gray-800 leading-relaxed">{question.response}</p>
+            </div>
+            <div className="mt-3 text-sm text-gray-600">
+              Length: {question.response.split(/\s+/).length} words • {wordDiff > 0 ? ` +${wordDiff}` : wordDiff < 0 ? ` ${wordDiff}` : ' ±0'} vs GT
+            </div>
+            <div className="mt-3">
+              <button
+                onClick={() => setIsResponseClaimsExpanded(!isResponseClaimsExpanded)}
+                className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+              >
+                {isResponseClaimsExpanded ? 'Collapse Claims' : `Expand Claims (${responseClaimsList.length})`}
+              </button>
+              {isResponseClaimsExpanded && (
+                <div className="mt-2 bg-gray-50 p-4 rounded border">
+                  <h4 className="text-sm font-semibold text-gray-800 mb-3">Response Claims</h4>
+                  {responseClaimsList.length > 0 ? (
+                    <>
+                      <div className="flex flex-wrap gap-2 mb-3">
+                        <span className="px-2 py-1 text-xs rounded-full bg-green-50 text-green-700 border border-green-200">Entailed {respCounts.entailed}</span>
+                        <span className="px-2 py-1 text-xs rounded-full bg-gray-50 text-gray-700 border border-gray-200">Neutral {respCounts.neutral}</span>
+                        <span className="px-2 py-1 text-xs rounded-full bg-red-50 text-red-700 border border-red-200">Contradictions {respCounts.contradiction}</span>
+                      </div>
+                      <ul className="list-none space-y-2 text-sm">
+                        {responseClaimsList.map((c, i) => {
+                          const status = respClaimStatuses[i] as ClaimStatus;
+                          const base = 'whitespace-pre-wrap rounded-md px-3 py-2 border cursor-help';
+                          const cls = status === 'entailed'
+                            ? `${base} bg-green-50 border-green-200 text-green-700`
+                            : status === 'contradiction'
+                              ? `${base} bg-red-50 border-red-200 text-red-700`
+                              : `${base} bg-gray-50 border-gray-200 text-gray-700`;
+                          return (
+                            <li key={`resp-claim-${i}`} className={cls} title={getRespClaimTooltip(status)}>{String(c || '')}</li>
+                          );
+                        })}
+                      </ul>
+                    </>
+                  ) : (
+                    <div className="text-sm text-gray-500">No claims extracted</div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
