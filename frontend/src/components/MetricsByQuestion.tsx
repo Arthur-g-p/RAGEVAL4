@@ -112,8 +112,11 @@ const MetricsByQuestion: React.FC<MetricsByQuestionProps> = ({ questions, onSele
     setVisibleMetrics(newVisible);
   };
 
-  const handleBarClick = (data: any) => {
-    onSelectQuestion(data.queryId);
+  const handleBarClick = (entry: any) => {
+    try {
+      const qid = entry?.payload?.queryId ?? entry?.activePayload?.[0]?.payload?.queryId;
+      if (qid) onSelectQuestion(qid);
+    } catch {}
   };
 
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -193,7 +196,6 @@ const MetricsByQuestion: React.FC<MetricsByQuestionProps> = ({ questions, onSele
           <BarChart
             data={chartData}
             margin={{ top: 20, right: 30, left: 20, bottom: 80 }}
-            onClick={handleBarClick}
           >
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis 
@@ -217,6 +219,7 @@ const MetricsByQuestion: React.FC<MetricsByQuestionProps> = ({ questions, onSele
                 fill={METRIC_COLORS[index % METRIC_COLORS.length]}
                 name={metric}
                 cursor="pointer"
+                onClick={handleBarClick}
               />
             ))}
           </BarChart>

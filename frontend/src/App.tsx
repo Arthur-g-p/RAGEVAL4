@@ -47,15 +47,6 @@ function App() {
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center">
               <h1 className="text-xl font-semibold text-gray-900">RAG Debugger</h1>
-              {selectedRun && (
-                <div className="ml-8 text-sm text-gray-600">
-                  <span className="font-medium">{selectedRun.collection}</span>
-                  <span className="mx-2">•</span>
-                  <span>{selectedRun.file_origin}</span>
-                  <span className="mx-2">•</span>
-                  <span>{selectedRun.timestamp}</span>
-                </div>
-              )}
             </div>
             <RunSelector onRunLoaded={handleRunLoaded} />
           </div>

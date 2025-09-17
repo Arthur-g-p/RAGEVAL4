@@ -21,21 +21,24 @@ A single-run interactive analyzer for forensic debugging of RAG experiments with
 
 ### Quick Start
 
-1. **Clone or download the project** to your desired directory
+1. Clone or download the project to your desired directory
 
-2. **Run the development environment**:
+2. Start the backend (Terminal A):
    ```cmd
-   run-dev.bat
+   python -m venv venv
+   venv\Scripts\activate
+   pip install -r requirements.txt
+   python main.py
    ```
-   
-   This script will:
-   - Set up Python virtual environment
-   - Install Python dependencies
-   - Start the FastAPI backend
-   - Install Node.js dependencies
-   - Start the React frontend
 
-3. **Access the application**:
+3. Start the frontend (Terminal B):
+   ```cmd
+   cd frontend
+   npm install
+   npm start
+   ```
+
+4. Access the application:
    - Frontend: http://localhost:3000
    - Backend API: http://127.0.0.1:8000
 
@@ -109,12 +112,12 @@ Each run JSON file should follow the schema defined in the requirements document
 
 ## Logging
 
-- Backend logs: `logs/backend.log`
-- Frontend logs: Browser console + in-memory log storage
+- Backend: Console output only (no log files are written)
+- Frontend: Browser console + in-memory log storage
 
 ## Architecture
 
-- **Frontend**: React + TypeScript + Tailwind CSS
+- **Frontend**: React + TypeScript + utility CSS classes (no Tailwind)
 - **Backend**: FastAPI (Python)
 - **Charts**: Recharts library
 - **No Authentication**: As specified in requirements
@@ -125,9 +128,15 @@ The application supports hot reloading for both frontend and backend during deve
 
 ### Available Scripts
 
-- `run-dev.bat` - Start both backend and frontend
-- `run-backend.bat` - Start only the backend
-- `run-frontend.bat` - Start only the frontend
+Frontend (npm):
+- `npm start` - Start the React development server
+- `npm run build` - Build the frontend for production
+- `npm test` - Run frontend tests
+
+Backend (Python):
+- `python main.py` - Start the FastAPI backend (after activating the virtual environment)
+
+Note: There are no `.bat` helper scripts in this repository.
 
 ## Troubleshooting
 

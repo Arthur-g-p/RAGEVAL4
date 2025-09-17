@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Question } from '../types';
 import { logger } from '../utils/logger';
+import { relAt as relAtSafe } from '../utils/relations';
 
 // Draw connectors between GT claims ↔ Chunks and Chunks ↔ Response claims
 // directly over the existing three-panel grid in the Question Inspector.
@@ -40,46 +41,7 @@ const relColor = (rel: Rel) => {
   }
 };
 
-// helper reading either [chunk][claim] or [claim][chunk]
-// Robust orientation detection using known counts. If counts are missing, fall back to heuristics.
-const relAt = (matrix: any[], chunkIdx: number, claimIdx: number, chunkCount?: number, claimCount?: number): Rel => {
-  try {
-    if (!Array.isArray(matrix)) return undefined;
-    const outer = matrix.length;
-
-    // Prefer exact count matches
-    if (typeof chunkCount === 'number' && outer === chunkCount) {
-      const row = matrix[chunkIdx];
-      if (Array.isArray(row)) return row[claimIdx] as Rel;
-    }
-    if (typeof claimCount === 'number' && outer === claimCount) {
-      const row = matrix[claimIdx];
-      if (Array.isArray(row)) return row[chunkIdx] as Rel;
-    }
-
-    // Heuristic via inner lengths
-    const first = matrix[0];
-    if (Array.isArray(first)) {
-      if (typeof claimCount === 'number' && first.length === claimCount) {
-        const row = matrix[chunkIdx];
-        if (Array.isArray(row)) return row[claimIdx] as Rel; // chunk-major
-      }
-      if (typeof chunkCount === 'number' && first.length === chunkCount) {
-        const row = matrix[claimIdx];
-        if (Array.isArray(row)) return row[chunkIdx] as Rel; // claim-major
-      }
-    }
-
-    // Fallback to legacy guess
-    const byChunk = Array.isArray(matrix?.[chunkIdx]) ? matrix[chunkIdx] : undefined;
-    if (Array.isArray(byChunk) && byChunk.length > claimIdx) return byChunk[claimIdx] as Rel;
-    const byClaim = Array.isArray(matrix?.[claimIdx]) ? matrix[claimIdx] : undefined;
-    if (Array.isArray(byClaim) && byClaim.length > chunkIdx) return byClaim[chunkIdx] as Rel;
-    return undefined;
-  } catch {
-    return undefined;
-  }
-};
+// use shared relations helper
 
 const ClaimChunkOverlay: React.FC<Props> = ({ question, gridRef, showGTClaims, showRespClaims, showChunks, recalcKey }) => {
   const [svgSize, setSvgSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
@@ -173,7 +135,7 @@ const ClaimChunkOverlay: React.FC<Props> = ({ question, gridRef, showGTClaims, s
       const yGT = rGT ? rGT.top - rootRect.top + rGT.height / 2 : 0;
       chunkInfos.forEach((ci, idx) => {
         const cjMatrix = ci.matrixIdx;
-        const rel = relAt(r2a, cjMatrix, gi, totalChunkCount, undefined);
+        const rel = relAtSafe(r2a, cjMatrix, gi, totalChunkCount, gtNodes.length) as Rel;
         if (!rel || rel === 'Neutral') return; // reduce clutter
         const xChunkL = ci.rect.left - rootRect.left;
         const yChunk = yChunkHead[idx];
@@ -201,7 +163,7 @@ const ClaimChunkOverlay: React.FC<Props> = ({ question, gridRef, showGTClaims, s
       const xRespAttach = anchor ? anchor.x : ((respLeftX[visIdx] ?? 0) + 24);
       chunkInfos.forEach((ci, idx) => {
         const cjMatrix = ci.matrixIdx;
-        const rel = relAt(r2r, cjMatrix, ri, totalChunkCount, undefined);
+        const rel = relAtSafe(r2r, cjMatrix, ri, totalChunkCount, undefined) as Rel;
         if (!rel || rel === 'Neutral') return; // skip neutrals
         const xChunkR = ci.rect.right - rootRect.left;
         const yChunk = yChunkHead[idx];

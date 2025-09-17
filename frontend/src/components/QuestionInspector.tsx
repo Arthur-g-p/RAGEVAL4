@@ -3,6 +3,7 @@ import { Question } from '../types';
 import { logger } from '../utils/logger';
 import MetricsDisplay from './MetricsDisplay';
 import { isIrrelevantFromSets } from '../utils/relevance';
+import { relAt as relationAt } from '../utils/relations';
 import ClaimChunkOverlay from './ClaimChunkOverlay';
 
 interface QuestionInspectorProps {
@@ -118,18 +119,7 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
     return extractClaims(raw);
   }, [question]);
 
-  // Helper to safely access relation at [chunkIdx][claimIdx] or [claimIdx][chunkIdx]
-  const relationAt = (matrix: any[], chunkIdx: number, claimIdx: number): any => {
-    try {
-      const byChunk = Array.isArray(matrix?.[chunkIdx]) ? matrix[chunkIdx] : undefined;
-      if (Array.isArray(byChunk) && byChunk.length > claimIdx) return byChunk[claimIdx];
-      const byClaim = Array.isArray(matrix?.[claimIdx]) ? matrix[claimIdx] : undefined;
-      if (Array.isArray(byClaim) && byClaim.length > chunkIdx) return byClaim[chunkIdx];
-      return undefined;
-    } catch {
-      return undefined;
-    }
-  };
+  // Using shared relation accessor from utils/relations
 
   type ClaimStatus = 'entailed' | 'neutral' | 'contradiction';
 
@@ -283,38 +273,6 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
 
     const chunkCount = Array.isArray(question.retrieved_context) ? question.retrieved_context.length : 0;
 
-    // Robust orientation detection copied from overlay
-    const relAtLocal = (matrix: any[], cIdx: number, clIdx: number, cc?: number, clc?: number): any => {
-      try {
-        if (!Array.isArray(matrix)) return undefined;
-        const outer = matrix.length;
-        if (typeof cc === 'number' && outer === cc) {
-          const row = matrix[cIdx];
-          if (Array.isArray(row)) return row[clIdx];
-        }
-        if (typeof clc === 'number' && outer === clc) {
-          const row = matrix[clIdx];
-          if (Array.isArray(row)) return row[cIdx];
-        }
-        const first = matrix[0];
-        if (Array.isArray(first)) {
-          if (typeof clc === 'number' && first.length === clc) {
-            const row = matrix[cIdx];
-            if (Array.isArray(row)) return row[clIdx];
-          }
-          if (typeof cc === 'number' && first.length === cc) {
-            const row = matrix[clIdx];
-            if (Array.isArray(row)) return row[cIdx];
-          }
-        }
-        const byChunk = Array.isArray(matrix?.[cIdx]) ? matrix[cIdx] : undefined;
-        if (Array.isArray(byChunk) && byChunk.length > clIdx) return byChunk[clIdx];
-        const byClaim = Array.isArray(matrix?.[clIdx]) ? matrix[clIdx] : undefined;
-        if (Array.isArray(byClaim) && byClaim.length > cIdx) return byClaim[cIdx];
-        return undefined;
-      } catch { return undefined; }
-    };
-
     // Helper to push by relation
     const pushByRel = (target: { entailments: string[]; contradictions: string[]; neutrals: string[] }, rel: any, claim: string) => {
       if (!claim || !rel) return;
@@ -323,15 +281,15 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
       else if (rel === 'Neutral') target.neutrals.push(claim);
     };
 
-    // GT relations using robust accessor
+    // GT relations using shared accessor
     for (let i = 0; i < gtClaims.length; i++) {
-      const rel = relAtLocal(r2a, chunkIndex, i, chunkCount, gtClaims.length);
+      const rel = relationAt(r2a, chunkIndex, i, chunkCount, gtClaims.length);
       pushByRel(result.gt, rel, String(gtClaims[i] ?? ''));
     }
 
-    // Response relations using robust accessor
+    // Response relations using shared accessor
     for (let i = 0; i < respClaims.length; i++) {
-      const rel = relAtLocal(r2r, chunkIndex, i, chunkCount, respClaims.length);
+      const rel = relationAt(r2r, chunkIndex, i, chunkCount, respClaims.length);
       pushByRel(result.response, rel, String(respClaims[i] ?? ''));
     }
 
@@ -777,28 +735,9 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                           const r2r: any[] = Array.isArray((question as any).retrieved2response) ? ((question as any).retrieved2response as any[]) : [];
                           const chunkCount = Array.isArray(question.retrieved_context) ? question.retrieved_context.length : 0;
                           const claimCount = responseClaimsList.length;
-                          const relAtAny = (matrix: any[], cIdx: number, clIdx: number): any => {
-                            try {
-                              if (!Array.isArray(matrix)) return undefined;
-                              const outer = matrix.length;
-                              if (outer === chunkCount) {
-                                const row = matrix[cIdx];
-                                if (Array.isArray(row)) return row[clIdx];
-                              }
-                              if (outer === claimCount) {
-                                const row = matrix[clIdx];
-                                if (Array.isArray(row)) return row[cIdx];
-                              }
-                              const byChunk = Array.isArray((matrix as any)?.[cIdx]) ? (matrix as any)[cIdx] : undefined;
-                              if (Array.isArray(byChunk) && byChunk.length > clIdx) return byChunk[clIdx];
-                              const byClaim = Array.isArray((matrix as any)?.[clIdx]) ? (matrix as any)[clIdx] : undefined;
-                              if (Array.isArray(byClaim) && byClaim.length > cIdx) return byClaim[cIdx];
-                              return undefined;
-                            } catch { return undefined; }
-                          };
                           let supportedByChunk = false;
                           for (let j = 0; j < chunkCount; j++) {
-                            const rel = relAtAny(r2r, j, i);
+                            const rel = relationAt(r2r, j, i, chunkCount, claimCount);
                             const s = String(rel || '').toLowerCase();
                             if (s === 'entailment') { supportedByChunk = true; break; }
                           }
