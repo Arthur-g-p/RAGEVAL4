@@ -253,3 +253,4 @@ code {
 /* Hover highlight class for overlay-linked elements */
 .qi-highlight { outline: 2px solid #0ea5e9; outline-offset: 2px; border-radius: 6px; transition: outline-color 0.15s ease-in-out; }
 .qi-bullet-dot { display:inline-block; width:8px; height:8px; border-radius:9999px; background-color:#16a34a; margin-right:8px; transform: translateY(-1px); }
+.qi-num-badge { display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:9999px; background-color:#eef2f7; color:#374151; font-size:11px; font-weight:600; border:1px solid #e5e7eb; }

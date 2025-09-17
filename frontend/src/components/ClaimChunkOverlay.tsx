@@ -24,7 +24,7 @@ type Rel = 'Entailment' | 'Neutral' | 'Contradiction' | undefined;
 type Rect = { x: number; y: number; width: number; height: number; fill: string; stroke: string; label: string };
 
 // Orthogonal connector path (rectangular polyline)
-type ConnPath = { d: string; stroke: string; width: number; label: string; src?: { col: 'gt'|'chunk'|'resp'; index: number }; dst?: { col: 'gt'|'chunk'|'resp'; index: number } };
+type ConnPath = { d: string; stroke: string; width: number; label: string; tooltip: string; kind: 'gtChunk' | 'chunkResp'; rel: Rel; src?: { col: 'gt'|'chunk'|'resp'; index: number }; dst?: { col: 'gt'|'chunk'|'resp'; index: number } };
 
 const relColor = (rel: Rel) => {
   switch (rel) {
@@ -133,17 +133,12 @@ const ClaimChunkOverlay: React.FC<Props> = ({ question, gridRef, showGTClaims, s
     const respRects = respNodes.map(n => n.getBoundingClientRect());
     const respLeftX = respRects.map(r => r.left - rootRect.left);
     const respBulletAnchors = respNodes.map((n, idx) => {
-      const dot = n.querySelector('.qi-bullet-dot') as HTMLElement | null;
-      if (dot) {
-        const dr = dot.getBoundingClientRect();
-        return {
-          x: dr.left - rootRect.left + dr.width / 2,
-          y: dr.top - rootRect.top + dr.height / 2,
-        };
-      }
-      // Fallback to left edge + offset, vertical center of li
       const rr = respRects[idx];
-      return { x: (respLeftX[idx] ?? 0) + 24, y: rr.top - rootRect.top + rr.height / 2 };
+      const shift = Math.max(1, STROKE_W * 0.5);
+      return {
+        x: rr.left - rootRect.left - shift, // just outside the left border of the li
+        y: rr.top - rootRect.top + rr.height / 2,
+      };
     });
 
     const totalChunkCount = Array.isArray((question as any).retrieved_context) ? ((question as any).retrieved_context as any[]).length : chunkInfos.length;
@@ -184,7 +179,10 @@ const ClaimChunkOverlay: React.FC<Props> = ({ question, gridRef, showGTClaims, s
         const c2x = xGT + dx * (1 - CURVE);
         const { fill, stroke } = relColor(rel);
         const d = `M ${xGT} ${yGT} C ${c1x} ${yGT}, ${c2x} ${yChunk}, ${xChunkL} ${yChunk}`;
-        pathsOut.push({ d, stroke, width: STROKE_W, label: `GT[${gi}] → Chunk[${cjMatrix}] :: ${rel}` , src: { col: 'gt', index: gi }, dst: { col: 'chunk', index: cjMatrix } });
+        const tooltip = String(rel) === 'Contradiction'
+          ? 'This claim is contradicting at least one chunk. Context Precision: ▼ Note: This conflict requires attention.'
+          : 'This claim can be entailed (i.e. found) in the chunks, therefore the retrieved chunks are important. Claim Recall ▲';
+        pathsOut.push({ d, stroke, width: STROKE_W, label: `GT[${gi}] → Chunk[${cjMatrix}] :: ${rel}` , tooltip, kind: 'gtChunk', rel, src: { col: 'gt', index: gi }, dst: { col: 'chunk', index: cjMatrix } });
         dots.push({ x: xGT, y: yGT, color: stroke, label: `src GT[${gi}]` });
         dots.push({ x: xChunkL, y: yChunk, color: stroke, label: `dst Chunk[${cjMatrix}]` });
         try {
@@ -217,7 +215,10 @@ const ClaimChunkOverlay: React.FC<Props> = ({ question, gridRef, showGTClaims, s
         const c2x = xChunkR + dx * (1 - CURVE);
         const { fill, stroke } = relColor(rel);
         const d = `M ${xChunkR} ${yChunk} C ${c1x} ${yChunk}, ${c2x} ${yResp}, ${xRespAttach} ${yResp}`;
-        pathsOut.push({ d, stroke, width: STROKE_W, label: `Chunk[${cjMatrix}] → Resp[${ri}] :: ${rel}`, src: { col: 'chunk', index: cjMatrix }, dst: { col: 'resp', index: ri } });
+        const tooltip = String(rel) === 'Contradiction'
+          ? 'This claim is contradicting at least one chunk.'
+          : 'This claim can be entailed (i.e. found) in the chunks, therefore the retrieved chunks are used as source. Context Utilization ▲. Note: This does not mean that the statement is correct, only that it is based.';
+        pathsOut.push({ d, stroke, width: STROKE_W, label: `Chunk[${cjMatrix}] → Resp[${ri}] :: ${rel}`, tooltip, kind: 'chunkResp', rel, src: { col: 'chunk', index: cjMatrix }, dst: { col: 'resp', index: ri } });
         dots.push({ x: xChunkR, y: yChunk, color: stroke, label: `src Chunk[${cjMatrix}]` });
         dots.push({ x: xRespAttach, y: yResp, color: stroke, label: `dst Resp[${ri}]` });
         try {
@@ -250,12 +251,25 @@ const ClaimChunkOverlay: React.FC<Props> = ({ question, gridRef, showGTClaims, s
         el.removeEventListener('mouseleave', leave);
       });
     };
-    gtNodes.forEach((el, gi) => attachHover(el, () => pathsOut.map((p, idx) => (p.src?.col==='gt' && p.src.index===gi) ? idx : -1).filter(i=>i>=0)));
+    // Hover over GT claim: include GT→Chunk and those chunk→Resp connectors
+    gtNodes.forEach((el, gi) => attachHover(el, () => {
+      const direct = pathsOut.map((p, idx) => (p.src?.col==='gt' && p.src.index===gi) ? idx : -1).filter(i=>i>=0);
+      const chunkIdxs = new Set<number>(direct.map(i => (pathsOut[i].dst?.col==='chunk' ? (pathsOut[i].dst!.index) : -1)).filter(v=>v>=0));
+      const chain = pathsOut.map((p, idx) => (p.src?.col==='chunk' && chunkIdxs.has(p.src.index)) ? idx : -1).filter(i=>i>=0);
+      return Array.from(new Set([...direct, ...chain]));
+    }));
+    // Hover over Chunk: include both GT→Chunk and Chunk→Resp
     chunkInfos.forEach((ci) => {
-      const el = chunkCol?.querySelector(`[data-chunk-index="${ci.matrixIdx}"]`) as HTMLElement | null;
+      const el = chunkCol?.querySelector(`[data-chunk-index=\"${ci.matrixIdx}\"]`) as HTMLElement | null;
       if (el) attachHover(el, () => pathsOut.map((p, idx) => ((p.src?.col==='chunk'&&p.src.index===ci.matrixIdx)||(p.dst?.col==='chunk'&&p.dst.index===ci.matrixIdx))?idx:-1).filter(i=>i>=0));
     });
-    respNodes.forEach((el, ri) => attachHover(el, () => pathsOut.map((p, idx) => (p.dst?.col==='resp' && p.dst.index===ri) ? idx : -1).filter(i=>i>=0)));
+    // Hover over Response claim: include Chunk→Resp and also the GT→Chunk connectors for those chunks
+    respNodes.forEach((el, ri) => attachHover(el, () => {
+      const direct = pathsOut.map((p, idx) => (p.dst?.col==='resp' && p.dst.index===ri) ? idx : -1).filter(i=>i>=0);
+      const chunkIdxs = new Set<number>(direct.map(i => (pathsOut[i].src?.col==='chunk' ? (pathsOut[i].src!.index) : -1)).filter(v=>v>=0));
+      const chain = pathsOut.map((p, idx) => (p.dst?.col==='chunk' && chunkIdxs.has(p.dst.index)) ? idx : -1).filter(i=>i>=0);
+      return Array.from(new Set([...direct, ...chain]));
+    }));
 
     logger.info(`ClaimChunkOverlay: drew ${pathsOut.length} connectors (curved to chunk head)`);
     try {
@@ -336,19 +350,22 @@ const ClaimChunkOverlay: React.FC<Props> = ({ question, gridRef, showGTClaims, s
         </filter>
       </defs>
       {paths.map((p, i) => (
-        <path
-          key={`p-${i}`}
-          d={p.d}
-          stroke={(hoverPathSet.has(i) || hoverIdx === i) ? '#0ea5e9' : p.stroke}
-          strokeWidth={(hoverPathSet.has(i) || hoverIdx === i) ? p.width + 1.5 : p.width}
-          fill="none"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          opacity={hoverIdx === i ? 1 : 0.85}
-          filter="url(#dropShadow)"
-          onMouseEnter={() => setHoverIdx(i)}
-          pointerEvents="visibleStroke"
-        />
+        <g key={`p-${i}`}>
+          <path
+            d={p.d}
+            stroke={(hoverPathSet.has(i) || hoverIdx === i) ? '#0ea5e9' : p.stroke}
+            strokeWidth={(hoverPathSet.has(i) || hoverIdx === i) ? p.width + 1.5 : p.width}
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity={(hoverPathSet.has(i) || hoverIdx === i) ? 1 : 0.85}
+            filter="url(#dropShadow)"
+            onMouseEnter={() => setHoverIdx(i)}
+            pointerEvents="visibleStroke"
+          >
+            <title>{p.tooltip}</title>
+          </path>
+        </g>
       ))}
       {/* Column guide lines */}
       {debugLines.map((l, i) => (

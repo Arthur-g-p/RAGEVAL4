@@ -18,6 +18,15 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
   const [isChunksExpanded, setIsChunksExpanded] = useState(true);
   // Grid ref for the 3-column area so overlays can measure and draw connectors over it
   const gridRef = React.useRef<HTMLDivElement | null>(null);
+  // Track expanded state for chunk previews in the three-column viewer
+  const [expandedChunks, setExpandedChunks] = useState<Set<number>>(new Set());
+  const toggleChunkExpanded = (idx: number) => {
+    setExpandedChunks(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      return next;
+    });
+  };
 
   React.useEffect(() => {
     logger.info(`QuestionInspector rendered for question ${question.query_id}`);
@@ -405,14 +414,17 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                       <ul className="list-none space-y-2 text-sm">
                         {gtClaimsList.map((c, i) => {
                           const status = gtClaimStatuses[i] as ClaimStatus;
-                          const base = 'whitespace-pre-wrap rounded-md px-3 py-2 border cursor-help';
+                          const base = 'whitespace-pre-wrap rounded-md px-3 py-2 border cursor-help flex items-center gap-2';
                           const cls = status === 'entailed'
                             ? `${base} bg-green-50 border-green-200 text-green-700`
                             : status === 'contradiction'
                               ? `${base} bg-red-50 border-red-200 text-red-700`
                               : `${base} bg-gray-50 border-gray-200 text-gray-700`;
                           return (
-                            <li key={`gt-claim-${i}`} data-gt-claim-index={i} className={cls} title={getGTClaimTooltip(status)}>{String(c || '')}</li>
+                            <li key={`gt-claim-${i}`} data-gt-claim-index={i} className={cls} title={getGTClaimTooltip(status)}>
+                              <span className="qi-num-badge">{i + 1}</span>
+                              <span>{String(c || '')}</span>
+                            </li>
                           );
                         })}
                       </ul>
@@ -438,30 +450,82 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
             </div>
 
             {isChunksExpanded && Array.isArray(question.retrieved_context) && question.retrieved_context.length > 0 ? (
-              <div className="space-y-4">
-                {question.retrieved_context.map((chunk, index) => {
-                  const wordCount = (chunk?.text || '').split(/\s+/).filter(Boolean).length;
+              <div>
+                {/* Chunk summary row */}
+                {(() => {
+                  let rel = 0, irr = 0, harm = 0, grounded = 0, unused = 0, respContr = 0;
+                  question.retrieved_context.forEach((_, idx) => {
+                    const sets = getClaimSetsForChunk(idx);
+                    const isIrrelevant = isIrrelevantFromSets(sets);
+                    if (sets.gt.entailments.length > 0) rel += 1;
+                    if (isIrrelevant) irr += 1;
+                    if (sets.gt.contradictions.length > 0) harm += 1;
+                    if (sets.response.entailments.length > 0) grounded += 1;
+                    if (sets.response.entailments.length === 0) unused += 1;
+                    if (sets.response.contradictions.length > 0) respContr += 1;
+                  });
                   return (
-                    <div key={index} data-chunk-index={index} className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
-                      <div className="bg-gray-100 px-4 py-3 border-b border-gray-200">
-                        <div className="flex justify-between items-center">
-                          <div className="text-sm font-semibold text-gray-900">Chunk {index + 1}</div>
-                          <span className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-0.5">{wordCount} words</span>
-                        </div>
-                        <div className="mt-2">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-mono text-xs">
-                            {chunk?.doc_id || 'Unknown'}
-                          </span>
+                    <div className="grid grid-cols-2 gap-4 text-xs text-gray-700 bg-white border border-gray-200 rounded-lg p-3 mb-4">
+                      <div className="flex flex-col">
+                        <div className="font-semibold text-gray-900 mb-1">Input Quality</div>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">Relevant {rel}</span>
+                        <span className="px-2 py-0.5 rounded-full bg-yellow-50 text-yellow-600 border border-yellow-200">Irrelevant {irr}</span>
+                        <span className="px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">Harming {harm}</span>
                         </div>
                       </div>
-                      <div className="p-4">
-                        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                          {chunk?.text || ''}
-                        </p>
+                      <div className="flex flex-col">
+                        <div className="font-semibold text-gray-900 mb-1">Generator usage</div>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">Grounded {grounded}</span>
+                        <span className="px-2 py-0.5 rounded-full bg-gray-50 text-gray-700 border border-gray-200">Unused {unused}</span>
+                        <span className="px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">Contradicting {respContr}</span>
+                        </div>
                       </div>
                     </div>
                   );
-                })}
+                })()}
+
+                <div className="space-y-4">
+                  {question.retrieved_context.map((chunk, index) => {
+                    const wordCount = (chunk?.text || '').split(/\s+/).filter(Boolean).length;
+                    const sets = getClaimSetsForChunk(index);
+                    const isIrrelevant = isIrrelevantFromSets(sets);
+                    const expanded = expandedChunks.has(index);
+                    const raw = chunk?.text || '';
+                    const preview = raw.length > 50 ? raw.slice(0, 50) + '…' : raw;
+                    return (
+                      <div key={index} className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+                        <div className="bg-gray-100 px-4 py-3 border-b border-gray-200">
+                          <div className="flex justify-between items-center">
+                            <div className="text-sm font-semibold text-gray-900">Chunk {index + 1}</div>
+                            <div className="flex items-center gap-2">
+                              {isIrrelevant && (
+                                <span className="px-2 py-1 text-xs rounded-full bg-yellow-50 text-yellow-600 border border-yellow-200" title="This chunk was retrieved but is not relevant to the ground truth (Neutral)">Irrelevant</span>
+                              )}
+                              <span className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-0.5">{wordCount} words</span>
+                            </div>
+                          </div>
+                          <div className="mt-2">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-mono text-xs">
+                              {chunk?.doc_id || 'Unknown'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="p-4" data-chunk-index={index}>
+                          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                            {expanded ? raw : preview}
+                          </p>
+                          {raw.length > 50 && (
+                            <button onClick={() => toggleChunkExpanded(index)} className="mt-2 text-blue-600 hover:text-blue-800 text-xs font-medium">
+                              {expanded ? 'Hide' : 'Expand'}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             ) : !isChunksExpanded ? (
               <div className="text-sm text-gray-600">Click "Expand" to view all retrieved chunks</div>
@@ -499,7 +563,7 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                       <ul className="list-none space-y-2 text-sm">
                         {responseClaimsList.map((c, i) => {
                           const status = respClaimStatuses[i] as ClaimStatus;
-                          const base = 'relative whitespace-pre-wrap rounded-md px-3 py-2 border cursor-help';
+                          const base = 'relative whitespace-pre-wrap rounded-md px-3 py-2 border cursor-help flex items-center gap-2';
                           const cls = status === 'entailed'
                             ? `${base} bg-green-50 border-green-200 text-green-700`
                             : status === 'contradiction'
@@ -507,7 +571,7 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                               : `${base} bg-gray-50 border-gray-200 text-gray-700`;
                           return (
                             <li key={`resp-claim-${i}`} data-resp-claim-index={i} className={cls} title={getRespClaimTooltip(status)}>
-                              <span className="qi-bullet-dot" aria-hidden="true">•</span>
+                              <span className="qi-num-badge">{i + 1}</span>
                               <span className="qi-claim-text">{String(c || '')}</span>
                             </li>
                           );
