@@ -223,7 +223,7 @@ const ClaimChunkOverlay: React.FC<Props> = ({ question, gridRef, showGTClaims, s
         const d = `M ${xChunkR} ${yChunk} C ${c1x} ${yChunk}, ${c2x} ${yResp}, ${xRespAttach} ${yResp}`;
         const tooltip = String(rel) === 'Contradiction'
           ? 'This claim is contradicting at least one chunk.'
-          : 'This claim can be entailed (i.e. found) in the chunks, therefore the retrieved chunks are used as source. Context Utilization ▲. Note: This does not mean that the statement is correct, only that it is based.';
+          : 'This claim can be entailed (i.e. found) in the chunks, therefore the retrieved chunks are used as source. Context Utilization ▲ (if the statement is correct); Faithfulness ▲ (if the statement is wrong or neutral).';
         pathsOut.push({ d, stroke, width: STROKE_W, label: `Chunk[${cjMatrix}] → Resp[${ri}] :: ${rel}`, tooltip, kind: 'chunkResp', rel, src: { col: 'chunk', index: cjMatrix }, dst: { col: 'resp', index: ri } });
         dots.push({ x: xChunkR, y: yChunk, color: stroke, label: `src Chunk[${cjMatrix}]` });
         dots.push({ x: xRespAttach, y: yResp, color: stroke, label: `dst Resp[${ri}]` });

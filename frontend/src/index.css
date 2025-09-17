@@ -258,8 +258,14 @@ code {
 .qi-claim-text { display:block; }
 
 /* Pills */
+ .qi-pill { display:inline-flex; align-items:center; height:22px; padding:0 8px; border-radius:9999px; line-height:1; font-size:12px; }
 .qi-pill-active { box-shadow: inset 0 0 0 1px #bfdbfe; }
 .qi-pill-inactive { opacity: 0.65; }
+
+/* Relationship arrow between chunk labels */
+.qi-rel-arrow { display:flex; align-items:center; flex:1 1 auto; min-width:60px; }
+.qi-rel-arrow svg { width:100%; height:14px; }
+.qi-rel-arrow text { font-size:10px; dominant-baseline:central; }
 
 /* Hover highlight class for overlay-linked elements */
 .qi-highlight { outline: 2px solid #0ea5e9; outline-offset: 2px; border-radius: 6px; transition: outline-color 0.15s ease-in-out; }

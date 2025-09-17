@@ -196,6 +196,26 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
     }
   };
 
+  type UsageStatus = 'grounded' | 'unused' | 'contradicting';
+  const usageStatusForSets = (sets: { response: { entailments: string[]; contradictions: string[]; neutrals: string[] } }): UsageStatus => {
+    const ent = sets?.response?.entailments?.length || 0;
+    const con = sets?.response?.contradictions?.length || 0;
+    if (con > 0) return 'contradicting';
+    if (ent > 0) return 'grounded';
+    return 'unused';
+  };
+  const getUsageTooltip = (status: UsageStatus): string => {
+    switch (status) {
+      case 'grounded':
+        return 'At least one response claim is supported by this chunk (entailment).';
+      case 'contradicting':
+        return 'At least one response claim conflicts with this chunk.';
+      case 'unused':
+      default:
+        return 'No response claim is supported by this chunk; the generator likely did not use it.';
+    }
+  };
+
   const gtClaimStatuses = React.useMemo<ClaimStatus[]>(() => {
     try {
       const resp2ans = (question as any)?.response2answer;
@@ -480,26 +500,35 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                   const tipRelevant = 'This claim can be entailed (i.e. found) in the chunks, therefore the retrieved chunks are important. Claim Recall ▲';
                   const tipHarming = 'This claim is contradicting at least one chunk. Context Precision: ▼ Note: This conflict requires attention.';
                   const tipIrrelevant = 'This chunk was retrieved but is not relevant to the ground truth (Neutral only).';
-                  const tipGrounded = 'This claim can be entailed (i.e. found) in the chunks, therefore the retrieved chunks are used as source. Context Utilization ▲. Note: This does not mean that the statement is correct, only that it is based.';
-                  const tipUnused = 'No response claims are entailed by this chunk; the generator likely did not use it.';
-                  const tipRespContr = 'This response claim contradicts at least one chunk.';
+                  const tipGrounded = 'At least one response claim is supported by this chunk (entailment).';
+                  const tipUnused = 'No response claim is supported by this chunk; the generator likely did not use it.';
+                  const tipRespContr = 'At least one response claim conflicts with this chunk.';
                   const pill = (active: boolean, onClick: () => void, clsOn: string, clsOff: string, label: string, count: number, title?: string) => (
                     <button
                       type="button"
                       onClick={onClick}
-                      className={`px-2 py-0.5 rounded-full border text-xs ${active ? clsOn : clsOff}`}
+                      className={`px-2 py-0.5 rounded-full border text-xs qi-pill ${active ? `qi-pill-active ${clsOn}` : `qi-pill-inactive ${clsOff}`}`}
                       title={title}
                       aria-pressed={active}
                     >
                       {label} {count}
                     </button>
                   );
+                  const join = (arr: string[]) => arr.length <= 1 ? arr.join('') : arr.slice(0, -1).join(', ') + ' and ' + arr.slice(-1);
+                  const qualitySel: string[] = [];
+                  if (chunkFilters.relevant) qualitySel.push('<span class=\"text-green-700\">relevant</span>');
+                  if (chunkFilters.irrelevant) qualitySel.push('<span class=\"text-yellow-600\">irrelevant</span>');
+                  if (chunkFilters.harming) qualitySel.push('<span class=\"text-red-700\">harming</span>');
+                  const usageSel: string[] = [];
+                  if (chunkFilters.grounded) usageSel.push('<span class=\"text-blue-700\">used</span>');
+                  if (chunkFilters.unused) usageSel.push('<span class=\"text-gray-700\">unused</span>');
+                  if (chunkFilters.contradicting) usageSel.push('<span class=\"text-red-700\">conflicting</span>');
                   return (
                     <div className="mb-4">
-                      <div className="grid grid-cols-2 gap-4 text-xs text-gray-700 bg-white border border-gray-200 rounded-lg p-3">
+                      <div className="flex flex-wrap items-start gap-8 text-xs text-gray-700">
                         <div className="flex flex-col">
                           <div className="font-semibold text-gray-900 mb-1">Input Quality</div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             {pill(
                               chunkFilters.relevant,
                               () => setChunkFilters(s => ({ ...s, relevant: !s.relevant })),
@@ -531,13 +560,13 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                         </div>
                         <div className="flex flex-col">
                           <div className="font-semibold text-gray-900 mb-1">Generator usage</div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             {pill(
                               chunkFilters.grounded,
                               () => setChunkFilters(s => ({ ...s, grounded: !s.grounded })),
                               'bg-blue-50 text-blue-700 border-blue-200',
                               'bg-white text-gray-400 border-gray-200',
-                              'Grounded',
+                              'Used',
                               grounded,
                               tipGrounded,
                             )}
@@ -555,13 +584,14 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                               () => setChunkFilters(s => ({ ...s, contradicting: !s.contradicting })),
                               'bg-red-50 text-red-700 border-red-200',
                               'bg-white text-gray-400 border-gray-200',
-                              'Contradicting',
+                              'Conflicting',
                               respContr,
                               tipRespContr,
                             )}
                           </div>
                         </div>
                       </div>
+                      <div className="text-xs text-gray-600 mt-2" dangerouslySetInnerHTML={{ __html: `Showing ${qualitySel.length?join(qualitySel):'<span class=\"text-gray-500\">no</span>'} chunks that are ${usageSel.length?join(usageSel):'<span class=\"text-gray-500\">no</span>'}.` }} />
                       <div className="border-b border-gray-200" style={{ marginTop: '6px' }} />
                     </div>
                   );
@@ -596,9 +626,9 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                     return (
                       <div key={index} className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden" data-chunk-index={index}>
                         <div className="bg-gray-100 px-4 py-3 border-b border-gray-200">
-                          <div className="flex justify-between items-center">
-                            <div className="text-sm font-semibold text-gray-900">Chunk {index + 1}</div>
+                          <div className="flex items-center gap-3">
                             <div className="flex items-center gap-2">
+                              <div className="text-sm font-semibold text-gray-900">Chunk {index + 1}</div>
                               {(() => {
                                 const st = status;
                                 const cls = st === 'relevant'
@@ -611,8 +641,58 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                                   <span className={`px-2 py-1 text-xs rounded-full border qi-pill qi-pill-active ${cls}`} title={getChunkTooltip(st)}>{label}</span>
                                 );
                               })()}
-                              <span className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-0.5">{wordCount} words</span>
                             </div>
+                            {(() => {
+                              const us = usageStatusForSets(sets);
+                              const cls = us === 'grounded'
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : us === 'contradicting'
+                                  ? 'bg-red-50 text-red-700 border-red-200'
+                                  : 'bg-gray-50 text-gray-700 border-gray-200';
+                              const label = us === 'grounded' ? 'Used' : us === 'contradicting' ? 'Conflicting' : 'Unused';
+
+                              // Relationship arrow meta (with Missed opportunity now red)
+                              const metaMap: Record<ChunkStatus, Record<UsageStatus, { label: string; description: string; color: 'green'|'gray'|'red' }>> = {
+                                relevant: {
+                                  grounded: { label: 'Good evidence used', description: 'Relevant chunk used to support the answer.', color: 'green' },
+                                  unused: { label: 'Missed opportunity', description: 'Relevant chunk not used by the generator.', color: 'red' },
+                                  contradicting: { label: 'Misuse of good evidence', description: 'Response conflicts with relevant chunk.', color: 'red' },
+                                },
+                                irrelevant: {
+                                  grounded: { label: 'Misgrounded use', description: 'Answer based on irrelevant chunk.', color: 'red' },
+                                  unused: { label: 'Benign noise', description: 'Irrelevant chunk not used.', color: 'gray' },
+                                  contradicting: { label: 'Distracting conflict', description: 'Irrelevant chunk conflicts with response.', color: 'red' },
+                                },
+                                harming: {
+                                  grounded: { label: 'Actively harmful grounding', description: 'Used chunk contradicts the GT.', color: 'red' },
+                                  unused: { label: 'Dodged a bullet', description: 'Contradictory chunk retrieved but not used.', color: 'green' },
+                                  contradicting: { label: 'Conflicted evidence', description: 'Chunk contradicts GT and conflicts with response.', color: 'gray' },
+                                },
+                              };
+                              const meta = metaMap[status][us];
+                              const stroke = meta.color === 'green' ? '#10b981' : meta.color === 'red' ? '#ef4444' : '#9ca3af';
+                              const markerId = `qi-ch-arrow-${index}`;
+
+                              return (
+                                <>
+                                  {/* Middle relationship arrow occupying available space */}
+                                  <div className="qi-rel-arrow" title={meta.description}>
+                                    <svg viewBox="0 0 100 16" aria-label={meta.label} preserveAspectRatio="none">
+                                      <defs>
+                                        <marker id={markerId} markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+                                          <path d="M0,0 L6,3 L0,6 Z" fill={stroke} />
+                                        </marker>
+                                      </defs>
+                                      <line x1="2" y1="11" x2="98" y2="11" stroke={stroke} strokeWidth="2" markerEnd={`url(#${markerId})`} vectorEffect="non-scaling-stroke"/>
+                                      <text x="50" y="4" textAnchor="middle" fill={stroke}> {meta.label} </text>
+                                    </svg>
+                                  </div>
+                                  {/* Right usage pill */}
+                                  <span className={`qi-pill border ${cls} qi-pill-active`} title={getUsageTooltip(us)}>{label}</span>
+                                  <span className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-0.5">{wordCount} words</span>
+                                </>
+                              );
+                            })()}
                           </div>
                           <div className="mt-2">
                             <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-mono text-xs">
