@@ -626,7 +626,7 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                     return (
                       <div key={index} className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden" data-chunk-index={index}>
                         <div className="bg-gray-100 px-4 py-3 border-b border-gray-200">
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
                             <div className="flex items-center gap-2">
                               <div className="text-sm font-semibold text-gray-900">Chunk {index + 1}</div>
                               {(() => {
@@ -677,19 +677,15 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                                 <>
                                   {/* Middle relationship arrow occupying available space */}
                                   <div className="qi-rel-arrow" title={meta.description}>
-                                    <svg viewBox="0 0 100 16" aria-label={meta.label} preserveAspectRatio="none">
-                                      <defs>
-                                        <marker id={markerId} markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
-                                          <path d="M0,0 L6,3 L0,6 Z" fill={stroke} />
-                                        </marker>
-                                      </defs>
-                                      <line x1="2" y1="11" x2="98" y2="11" stroke={stroke} strokeWidth="2" markerEnd={`url(#${markerId})`} vectorEffect="non-scaling-stroke"/>
-                                      <text x="50" y="4" textAnchor="middle" fill={stroke}> {meta.label} </text>
+                                    <div className="qi-rel-label" style={{ color: stroke }}>{meta.label}</div>
+                                    <svg viewBox="0 0 100 12" aria-label={meta.label} preserveAspectRatio="none">
+                                      <line x1="6" y1="6" x2="94" y2="6" stroke={stroke} strokeWidth="2" strokeLinecap="round" vectorEffect="non-scaling-stroke"/>
+                                      <polygon points="100,6 94,3 94,9" fill={stroke} />
                                     </svg>
                                   </div>
                                   {/* Right usage pill */}
                                   <span className={`qi-pill border ${cls} qi-pill-active`} title={getUsageTooltip(us)}>{label}</span>
-                                  <span className="text-xs bg-gray-200 text-gray-700 rounded px-2 py-0.5">{wordCount} words</span>
+                                  <span className="qi-pill border bg-gray-50 text-gray-700 border-gray-200">{wordCount} words</span>
                                 </>
                               );
                             })()}
@@ -777,6 +773,38 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                               (status === 'contradiction' && !respClaimFilters.contradiction)) {
                             return null;
                           }
+                          // Determine if any chunk entails this response claim
+                          const r2r: any[] = Array.isArray((question as any).retrieved2response) ? ((question as any).retrieved2response as any[]) : [];
+                          const chunkCount = Array.isArray(question.retrieved_context) ? question.retrieved_context.length : 0;
+                          const claimCount = responseClaimsList.length;
+                          const relAtAny = (matrix: any[], cIdx: number, clIdx: number): any => {
+                            try {
+                              if (!Array.isArray(matrix)) return undefined;
+                              const outer = matrix.length;
+                              if (outer === chunkCount) {
+                                const row = matrix[cIdx];
+                                if (Array.isArray(row)) return row[clIdx];
+                              }
+                              if (outer === claimCount) {
+                                const row = matrix[clIdx];
+                                if (Array.isArray(row)) return row[cIdx];
+                              }
+                              const byChunk = Array.isArray((matrix as any)?.[cIdx]) ? (matrix as any)[cIdx] : undefined;
+                              if (Array.isArray(byChunk) && byChunk.length > clIdx) return byChunk[clIdx];
+                              const byClaim = Array.isArray((matrix as any)?.[clIdx]) ? (matrix as any)[clIdx] : undefined;
+                              if (Array.isArray(byClaim) && byClaim.length > cIdx) return byClaim[cIdx];
+                              return undefined;
+                            } catch { return undefined; }
+                          };
+                          let supportedByChunk = false;
+                          for (let j = 0; j < chunkCount; j++) {
+                            const rel = relAtAny(r2r, j, i);
+                            const s = String(rel || '').toLowerCase();
+                            if (s === 'entailment') { supportedByChunk = true; break; }
+                          }
+                          const isCorrect = status === 'entailed';
+                          const showSelfKnowledge = isCorrect && !supportedByChunk;
+                          const showHallucination = !isCorrect && !supportedByChunk;
                           const base = 'relative whitespace-pre-wrap rounded-md px-3 py-2 border cursor-help flex items-center gap-2';
                           const cls = status === 'entailed'
                             ? `${base} bg-green-50 border-green-200 text-green-700`
@@ -787,6 +815,16 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                             <li key={`resp-claim-${i}`} data-resp-claim-index={i} className={`${cls} qi-claim-item`} title={getRespClaimTooltip(status)}>
                               <span className="qi-num-badge">{i + 1}</span>
                               <span className="qi-claim-text">{String(c || '')}</span>
+{showSelfKnowledge && (
+                                <span className="qi-claim-tag" title="This claim was not entailed in the chunks, but the claim is still correct, therefore it counts as self-knowledge. Possibly common knowledge or an error. Metric: Self Knowledge ▲">
+<span className="qi-pill qi-pill-xxs border qi-tag-blue">Self Knowledge</span>
+                                </span>
+                              )}
+                              {showHallucination && (
+                                <span className="qi-claim-tag" title="This claim was not supported by any chunk and is not correct. This is a hallucination. Metric: Hallucination ▲">
+<span className="qi-pill qi-pill-xxs border qi-tag-red">Hallucination</span>
+                                </span>
+                              )}
                             </li>
                           );
                         })}

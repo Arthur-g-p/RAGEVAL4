@@ -189,17 +189,6 @@ const ClaimChunkOverlay: React.FC<Props> = ({ question, gridRef, showGTClaims, s
         pathsOut.push({ d, stroke, width: STROKE_W, label: `GT[${gi}] → Chunk[${cjMatrix}] :: ${rel}` , tooltip, kind: 'gtChunk', rel, src: { col: 'gt', index: gi }, dst: { col: 'chunk', index: cjMatrix } });
         dots.push({ x: xGT, y: yGT, color: stroke, label: `src GT[${gi}]` });
         dots.push({ x: xChunkL, y: yChunk, color: stroke, label: `dst Chunk[${cjMatrix}]` });
-        try {
-          // eslint-disable-next-line no-console
-          console.debug('GT→Chunk', {
-            gi,
-            cj: cjMatrix,
-            src: { x: Math.round(xGT), y: Math.round(yGT) },
-            c1x: Math.round(c1x), c2x: Math.round(c2x),
-            dst: { x: Math.round(xChunkL), y: Math.round(yChunk) },
-            rel,
-          });
-        } catch {}
       });
     });
 
@@ -227,17 +216,6 @@ const ClaimChunkOverlay: React.FC<Props> = ({ question, gridRef, showGTClaims, s
         pathsOut.push({ d, stroke, width: STROKE_W, label: `Chunk[${cjMatrix}] → Resp[${ri}] :: ${rel}`, tooltip, kind: 'chunkResp', rel, src: { col: 'chunk', index: cjMatrix }, dst: { col: 'resp', index: ri } });
         dots.push({ x: xChunkR, y: yChunk, color: stroke, label: `src Chunk[${cjMatrix}]` });
         dots.push({ x: xRespAttach, y: yResp, color: stroke, label: `dst Resp[${ri}]` });
-        try {
-          // eslint-disable-next-line no-console
-          console.debug('Chunk→Resp', {
-            cj: cjMatrix,
-            ri,
-            src: { x: Math.round(xChunkR), y: Math.round(yChunk) },
-            c1x: Math.round(c1x), c2x: Math.round(c2x),
-            dst: { x: Math.round(xRespAttach), y: Math.round(yResp) },
-            rel,
-          });
-        } catch {}
       });
     });
 
@@ -278,12 +256,6 @@ const ClaimChunkOverlay: React.FC<Props> = ({ question, gridRef, showGTClaims, s
     }));
 
     logger.info(`ClaimChunkOverlay: drew ${pathsOut.length} connectors (curved to chunk head)`);
-    try {
-      // eslint-disable-next-line no-console
-      console.debug('grid rootRect', { left: Math.round(rootRect.left), top: Math.round(rootRect.top), width: Math.round(rootRect.width), height: Math.round(rootRect.height) });
-      console.debug('column guides', lines.map((l) => ({ x: Math.round(l.x), label: l.label })));
-      console.table(pathsOut.slice(0, 50).map((p) => ({ label: p.label })));
-    } catch {}
   }, [gridRef, question, showGTClaims, showRespClaims, showChunks, recalcKey]);
   // Recompute when layout or toggles change
   useLayoutEffect(() => {
@@ -372,10 +344,6 @@ const ClaimChunkOverlay: React.FC<Props> = ({ question, gridRef, showGTClaims, s
             <title>{p.tooltip}</title>
           </path>
         </g>
-      ))}
-      {/* Column guide lines */}
-      {debugLines.map((l, i) => (
-        <line key={`gl-${i}`} x1={l.x} y1={0} x2={l.x} y2={svgSize.height} stroke={l.color} strokeDasharray="4 3" opacity={0.5} pointerEvents="none" />
       ))}
       {/* Debug endpoint dots */}
       {debugDots.map((d, i) => (

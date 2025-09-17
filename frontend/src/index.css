@@ -254,8 +254,16 @@ code {
 .flex-col { flex-direction: column; }
 
 /* Claim list alignment helper */
-.qi-claim-item { display:flex; align-items:center; gap:0.5rem; min-height: 28px; }
+.qi-claim-item { position:relative; z-index:20; display:flex; align-items:center; gap:0.5rem; min-height: 28px; }
 .qi-claim-text { display:block; }
+/* Small hover tag for claims (pill style) */
+.qi-claim-tag { position:absolute; top:-4px; right:-6px; opacity:1; pointer-events:auto; z-index:50; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.15)); }
+/* use same pill style, just smaller */
+.qi-pill-sm { height:18px; padding:0 6px; font-size:11px; }
+.qi-pill-xs { height:10px; padding:0 4px; font-size:8px; }
+.qi-pill-xxs { height:auto; padding:0 8px; font-size:11px; letter-spacing:0; transform: scale(0.55); transform-origin: top right; }
+.qi-tag-blue { background:#eff6ff; color:#1d4ed8; border-color:#bfdbfe; }
+.qi-tag-red { background:#fef2f2; color:#b91c1c; border-color:#fecaca; }
 
 /* Pills */
  .qi-pill { display:inline-flex; align-items:center; height:22px; padding:0 8px; border-radius:9999px; line-height:1; font-size:12px; }
@@ -263,9 +271,9 @@ code {
 .qi-pill-inactive { opacity: 0.65; }
 
 /* Relationship arrow between chunk labels */
-.qi-rel-arrow { display:flex; align-items:center; flex:1 1 auto; min-width:60px; }
-.qi-rel-arrow svg { width:100%; height:14px; }
-.qi-rel-arrow text { font-size:10px; dominant-baseline:central; }
+.qi-rel-arrow { position:relative; display:flex; align-items:center; flex:1 1 auto; height:18px; min-width:80px; margin: 1px 8px 0 8px; }
+.qi-rel-arrow svg { width:100%; height:12px; overflow:visible; }
+.qi-rel-label { position:absolute; top:50%; left:50%; transform:translate(-50%, -85%); font-size:11px; line-height:1; white-space:nowrap; pointer-events:auto; }
 
 /* Hover highlight class for overlay-linked elements */
 .qi-highlight { outline: 2px solid #0ea5e9; outline-offset: 2px; border-radius: 6px; transition: outline-color 0.15s ease-in-out; }
