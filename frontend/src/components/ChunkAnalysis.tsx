@@ -521,8 +521,14 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
           document.querySelectorAll(`[data-docid="${safeDoc}"]`).forEach(el => candidates.push(el));
         }
         const target = candidates[0] as HTMLElement | undefined;
-        if (target && typeof target.scrollIntoView === 'function') {
-          target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (target) {
+          try {
+            const rect = target.getBoundingClientRect();
+            const top = (window.pageYOffset || document.documentElement.scrollTop) + rect.top - 80; // header offset
+            window.scrollTo({ top, behavior: 'smooth' });
+          } catch {
+            if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
           target.classList.add('ring-2', 'ring-blue-500');
           setTimeout(() => target.classList.remove('ring-2', 'ring-blue-500'), 1500);
         }
@@ -543,6 +549,7 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
       console.warn('Bar click handler failed', e);
     }
   };
+
 
   const exportDuplicatesCSV = () => {
     const csvContent = duplicateGroups

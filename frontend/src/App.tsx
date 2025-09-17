@@ -26,6 +26,7 @@ function App() {
     }
   };
 
+
   const handleSelectQuestion = (queryId: string) => {
     setSelectedQuestionId(queryId);
     setActiveTab('inspector');

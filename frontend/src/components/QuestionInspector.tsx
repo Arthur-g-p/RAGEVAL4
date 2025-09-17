@@ -649,7 +649,7 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                             })()}
                           </div>
                           <div className="mt-2">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-mono text-xs">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-mono text-xs">
                               {chunk?.doc_id || 'Unknown'}
                             </span>
                           </div>
@@ -658,11 +658,13 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                           <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
                             {expanded ? raw : preview}
                           </p>
-                          {raw.length > 50 && (
-                            <button onClick={() => toggleChunkExpanded(index)} className="mt-2 text-blue-600 hover:text-blue-800 text-xs font-medium">
-                              {expanded ? 'Hide' : 'Expand'}
-                            </button>
-                          )}
+                          <div className="mt-2 flex items-center gap-3">
+                            {raw.length > 50 && (
+                              <button onClick={() => toggleChunkExpanded(index)} className="text-blue-600 hover:text-blue-800 text-xs font-medium">
+                                {expanded ? 'Hide' : 'Expand'}
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
