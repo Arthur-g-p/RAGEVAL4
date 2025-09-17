@@ -17,6 +17,8 @@ interface Props {
   showGTClaims: boolean;
   showRespClaims: boolean;
   showChunks: boolean;
+  // When this string changes, we recompute paths (used for filters)
+  recalcKey?: string;
 }
 
 type Rel = 'Entailment' | 'Neutral' | 'Contradiction' | undefined;
@@ -79,7 +81,7 @@ const relAt = (matrix: any[], chunkIdx: number, claimIdx: number, chunkCount?: n
   }
 };
 
-const ClaimChunkOverlay: React.FC<Props> = ({ question, gridRef, showGTClaims, showRespClaims, showChunks }) => {
+const ClaimChunkOverlay: React.FC<Props> = ({ question, gridRef, showGTClaims, showRespClaims, showChunks, recalcKey }) => {
   const [svgSize, setSvgSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const [paths, setPaths] = useState<ConnPath[]>([]);
   const [debugDots, setDebugDots] = useState<Array<{ x: number; y: number; color: string; label: string }>>([]);
@@ -163,13 +165,15 @@ const ClaimChunkOverlay: React.FC<Props> = ({ question, gridRef, showGTClaims, s
 
 
     // GT claim → Chunk connectors (only for Entailment or Contradiction; skip Neutral by default)
-    gtNodes.forEach((_, gi) => {
-      const xGT = gtRightX[gi] ?? 0;
-      const rGT = gtRects[gi];
+    gtNodes.forEach((el, visIdx) => {
+      const attr = el.getAttribute('data-gt-claim-index');
+      const gi = attr != null ? parseInt(attr, 10) : visIdx; // use original index from dataset when filtered
+      const xGT = gtRightX[visIdx] ?? 0;
+      const rGT = gtRects[visIdx];
       const yGT = rGT ? rGT.top - rootRect.top + rGT.height / 2 : 0;
       chunkInfos.forEach((ci, idx) => {
         const cjMatrix = ci.matrixIdx;
-        const rel = relAt(r2a, cjMatrix, gi, totalChunkCount, gtNodes.length);
+        const rel = relAt(r2a, cjMatrix, gi, totalChunkCount, undefined);
         if (!rel || rel === 'Neutral') return; // reduce clutter
         const xChunkL = ci.rect.left - rootRect.left;
         const yChunk = yChunkHead[idx];
@@ -200,13 +204,15 @@ const ClaimChunkOverlay: React.FC<Props> = ({ question, gridRef, showGTClaims, s
     });
 
     // Chunk → Response claim connectors
-    respNodes.forEach((_, ri) => {
-      const anchor = respBulletAnchors[ri];
-      const yResp = anchor ? anchor.y : (respRects[ri] ? respRects[ri].top - rootRect.top + respRects[ri].height / 2 : 0);
-      const xRespAttach = anchor ? anchor.x : ((respLeftX[ri] ?? 0) + 24);
+    respNodes.forEach((el, visIdx) => {
+      const attr = el.getAttribute('data-resp-claim-index');
+      const ri = attr != null ? parseInt(attr, 10) : visIdx;
+      const anchor = respBulletAnchors[visIdx];
+      const yResp = anchor ? anchor.y : (respRects[visIdx] ? respRects[visIdx].top - rootRect.top + respRects[visIdx].height / 2 : 0);
+      const xRespAttach = anchor ? anchor.x : ((respLeftX[visIdx] ?? 0) + 24);
       chunkInfos.forEach((ci, idx) => {
         const cjMatrix = ci.matrixIdx;
-        const rel = relAt(r2r, cjMatrix, ri, totalChunkCount, respNodes.length);
+        const rel = relAt(r2r, cjMatrix, ri, totalChunkCount, undefined);
         if (!rel || rel === 'Neutral') return; // skip neutrals
         const xChunkR = ci.rect.right - rootRect.left;
         const yChunk = yChunkHead[idx];
@@ -278,7 +284,7 @@ const ClaimChunkOverlay: React.FC<Props> = ({ question, gridRef, showGTClaims, s
       console.debug('column guides', lines.map((l) => ({ x: Math.round(l.x), label: l.label })));
       console.table(pathsOut.slice(0, 50).map((p) => ({ label: p.label })));
     } catch {}
-  }, [gridRef, question, showGTClaims, showRespClaims, showChunks]);
+  }, [gridRef, question, showGTClaims, showRespClaims, showChunks, recalcKey]);
   // Recompute when layout or toggles change
   useLayoutEffect(() => {
     // slight delay to allow expanded sections to mount

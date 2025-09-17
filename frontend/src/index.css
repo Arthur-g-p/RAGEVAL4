@@ -250,6 +250,17 @@ code {
 .border-yellow-300 { border-color: #fcd34d; }
 .ml-2 { margin-left: 0.5rem; }
 
+/* Helpers missing from Tailwind subset */
+.flex-col { flex-direction: column; }
+
+/* Claim list alignment helper */
+.qi-claim-item { display:flex; align-items:center; gap:0.5rem; min-height: 28px; }
+.qi-claim-text { display:block; }
+
+/* Pills */
+.qi-pill-active { box-shadow: inset 0 0 0 1px #bfdbfe; }
+.qi-pill-inactive { opacity: 0.65; }
+
 /* Hover highlight class for overlay-linked elements */
 .qi-highlight { outline: 2px solid #0ea5e9; outline-offset: 2px; border-radius: 6px; transition: outline-color 0.15s ease-in-out; }
 .qi-bullet-dot { display:inline-block; width:8px; height:8px; border-radius:9999px; background-color:#16a34a; margin-right:8px; transform: translateY(-1px); }
