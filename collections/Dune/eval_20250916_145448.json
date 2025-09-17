@@ -189,7 +189,7 @@
                     "Ghanima Atreides"
                 ]
             ],
-            "answer2response": [
+            "answer2response": [ 
                 "Entailment",
                 "Entailment",
                 "Neutral",
@@ -197,7 +197,7 @@
                 "Neutral",
                 "Entailment"
             ],
-            "response2answer": [
+            "response2answer": [ 
                 "Entailment",
                 "Entailment"
             ],

@@ -3,6 +3,7 @@ import { Question } from '../types';
 import { logger } from '../utils/logger';
 import MetricsDisplay from './MetricsDisplay';
 import { isIrrelevantFromCounts, isIrrelevantFromSets } from '../utils/relevance';
+import ClaimChunkOverlay from './ClaimChunkOverlay';
 
 interface QuestionInspectorProps {
   question: Question;
@@ -15,6 +16,8 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
   const [isGTClaimsExpanded, setIsGTClaimsExpanded] = useState(false);
   const [isResponseClaimsExpanded, setIsResponseClaimsExpanded] = useState(false);
   const [isChunksExpanded, setIsChunksExpanded] = useState(true);
+  // Grid ref for the 3-column area so overlays can measure and draw connectors over it
+  const gridRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
     logger.info(`QuestionInspector rendered for question ${question.query_id}`);
@@ -370,7 +373,7 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
 
       {/* Row 2: Three-panels horizontal (GT Answer, Retrieved Chunks, System Response) */}
       <div className="overflow-x-auto mb-8 pb-6 border-b border-gray-200">
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 3fr 2fr', gap: '1.5rem', minWidth: '1200px' }}>
+        <div id="qi-3col-grid" ref={gridRef} style={{ position: 'relative', display: 'grid', gridTemplateColumns: '2fr 3fr 2fr', gap: '1.5rem', minWidth: '1200px' }}>
           {/* Panel A: Ground Truth Answer (2 units) */}
           <div className="bg-white border p-6 rounded-lg">
             <h3 className="text-lg font-semibold mb-3">Ground Truth Answer</h3>
@@ -409,7 +412,7 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                               ? `${base} bg-red-50 border-red-200 text-red-700`
                               : `${base} bg-gray-50 border-gray-200 text-gray-700`;
                           return (
-                            <li key={`gt-claim-${i}`} className={cls} title={getGTClaimTooltip(status)}>{String(c || '')}</li>
+                            <li key={`gt-claim-${i}`} data-gt-claim-index={i} className={cls} title={getGTClaimTooltip(status)}>{String(c || '')}</li>
                           );
                         })}
                       </ul>
@@ -439,7 +442,7 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                 {question.retrieved_context.map((chunk, index) => {
                   const wordCount = (chunk?.text || '').split(/\s+/).filter(Boolean).length;
                   return (
-                    <div key={index} className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
+                    <div key={index} data-chunk-index={index} className="rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden">
                       <div className="bg-gray-100 px-4 py-3 border-b border-gray-200">
                         <div className="flex justify-between items-center">
                           <div className="text-sm font-semibold text-gray-900">Chunk {index + 1}</div>
@@ -496,14 +499,17 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
                       <ul className="list-none space-y-2 text-sm">
                         {responseClaimsList.map((c, i) => {
                           const status = respClaimStatuses[i] as ClaimStatus;
-                          const base = 'whitespace-pre-wrap rounded-md px-3 py-2 border cursor-help';
+                          const base = 'relative whitespace-pre-wrap rounded-md px-3 py-2 border cursor-help';
                           const cls = status === 'entailed'
                             ? `${base} bg-green-50 border-green-200 text-green-700`
                             : status === 'contradiction'
                               ? `${base} bg-red-50 border-red-200 text-red-700`
                               : `${base} bg-gray-50 border-gray-200 text-gray-700`;
                           return (
-                            <li key={`resp-claim-${i}`} className={cls} title={getRespClaimTooltip(status)}>{String(c || '')}</li>
+                            <li key={`resp-claim-${i}`} data-resp-claim-index={i} className={cls} title={getRespClaimTooltip(status)}>
+                              <span className="qi-bullet-dot" aria-hidden="true">•</span>
+                              <span className="qi-claim-text">{String(c || '')}</span>
+                            </li>
                           );
                         })}
                       </ul>
@@ -515,6 +521,15 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
               )}
             </div>
           </div>
+
+          {/* Overlay: draws connectors across the three columns */}
+          <ClaimChunkOverlay 
+            question={question}
+            gridRef={gridRef as React.RefObject<HTMLDivElement>}
+            showGTClaims={isGTClaimsExpanded && gtClaimsList.length > 0}
+            showRespClaims={isResponseClaimsExpanded && responseClaimsList.length > 0}
+            showChunks={isChunksExpanded && Array.isArray(question.retrieved_context) && question.retrieved_context.length > 0}
+          />
         </div>
       </div>
 
