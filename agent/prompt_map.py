@@ -8,7 +8,8 @@ Customize here:
 - Edit TAB_PROMPTS to change guidance per active_tab.
 Use build_prompt_for_tab(tab) in the agent to assemble the final system prompt.
 """
-from typing import Optional
+from typing import Optional, Dict, Any
+import json
 
 # Constant instructions (always included)
 BASE_PROMPT = (
@@ -23,12 +24,10 @@ BASE_PROMPT = (
 TAB_PROMPTS = {
     # Add or edit the strings below to adjust behavior per tab.
     "overview": (
-        "User is on Overview. Prioritize high-level metrics and trends. "
-        "If needed, run small queries (e.g., top 3 highlights). Avoid large tables."
+        "User is on Overview. Prioritize high-level metrics and trends. Here only the all metrics (accross all runs) can be seen."
     ),
     "metrics": (
-        "User is on Metrics. Focus on per-question comparisons and worst/best by metric (precision, recall, f1). "
-        "List small slices (e.g., top/bottom 3) including IDs and values."
+        "User is on Metrics. A chart can be seen that shows all questions on the X axis including their word count. The Y-Axis display a selected metric, in a multi bar chart. Focus on per-question comparisons and worst/best by metric specifically those that are selected. "
     ),
     "inspector": (
         "User is on Inspector. Prefer details for the current question. "
@@ -40,12 +39,55 @@ TAB_PROMPTS = {
     ),
 }
 
+# What the RAFCHECKER IS. Acknolowdge limitations too
+METHODOLGY = (""" 
+""")
+# this might get big
+IMPROVMENT_STRATEGIES = (""" 
+Context Utilizatzion = The potential of recall of the generator
+       
+""")
 
-def build_prompt_for_tab(active_tab: Optional[str]) -> str:
+# Small schema introduction appended to all prompts to reduce unnecessary probing
+DATA_INTRO = (
+    "You are analyzing a single RAG evaluation run.\n"
+    "- data: dict with keys ['results', 'metrics'].\n"
+    "- data['results']: list of questions. Each question typically includes:\n"
+    "  • query_id, query, gt_answer, response (strings)\n"
+    "  • retrieved_context: list of chunks (each with at least {'doc_id','text'}).\n"
+    "    (Derived runs may add 'effectiveness_analysis' and 'local_analysis' per chunk.)\n"
+    "  • response_claims, gt_answer_claims: lists of claims (in knowledge triplets).\n"
+    "  • retrieved2answer: per-chunk list of labels for GT claims ('Entailment'|'Neutral'|'Contradiction').\n"
+    "  • retrieved2response: per-chunk list of labels for response claims.\n"
+    "  • response2answer, answer2response: optional per-claim label arrays.\n"
+    "  • metrics: per-question metrics (precision, recall, f1, etc.).\n"
+    "  • context_length (words) and num_chunks (integers).\n"
+    "- data['metrics']: aggregated run metrics (overall_metrics, retriever_metrics, generator_metrics).\n"
+    "- Semantics: 'Entailment'=supports/used; 'Neutral'=neither; 'Contradiction'=conflicts.\n"
+    "- Tool (dataset_query): ONE pure Python expression over data/questions; no assignments/semicolons/newlines.\n"
+    "  Allowed builtins: len,sum,min,max,sorted,any,all,set,list,dict,tuple,enumerate,range,type,isinstance,str,int,float.\n"
+    "  Use 'limit' to cap rows and 'char_limit' to cap string length. Keep outputs small.\n"
+)
+
+
+def build_prompt_for_tab(active_tab: Optional[str], view_context: Optional[Dict[str, Any]]) -> str:
     parts = [BASE_PROMPT]
     if active_tab and active_tab in TAB_PROMPTS:
         parts.append(TAB_PROMPTS[active_tab])
     elif active_tab:
         parts.append(f"User tab: {active_tab}.")
+
+    # Always append view_context as-is (compact JSON) if provided
+    if isinstance(view_context, dict) and view_context:
+        try:
+            vc_json = json.dumps(view_context, ensure_ascii=False, separators=(",", ":"))
+            parts.append("View context: " + vc_json)
+        except Exception:
+            # Fallback to keys only if serialization fails
+            keys = ", ".join(sorted(view_context.keys()))
+            parts.append("View context keys: " + keys)
+
+    # Always append data intro
+    parts.append(DATA_INTRO)
     return "\n".join(parts)
 

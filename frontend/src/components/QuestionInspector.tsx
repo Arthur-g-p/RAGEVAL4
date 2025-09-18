@@ -10,9 +10,15 @@ interface QuestionInspectorProps {
   question: Question;
   allQuestions?: Question[];
   onSelectQuestion?: (queryId: string) => void;
+  onViewContextChange?: (vc: {
+    chunk_filters: { relevant: boolean; irrelevant: boolean; harming: boolean; grounded: boolean; unused: boolean; contradicting: boolean };
+    gt_claim_filters: { entailed: boolean; neutral: boolean; contradiction: boolean };
+    resp_claim_filters: { entailed: boolean; neutral: boolean; contradiction: boolean };
+    show_connectors: boolean;
+  }) => void;
 }
 
-const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQuestions, onSelectQuestion }) => {
+const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQuestions, onSelectQuestion, onViewContextChange }) => {
   const [isGTClaimsExpanded, setIsGTClaimsExpanded] = useState(false);
   const [isResponseClaimsExpanded, setIsResponseClaimsExpanded] = useState(false);
   const [isChunksExpanded, setIsChunksExpanded] = useState(true);
@@ -42,6 +48,18 @@ const QuestionInspector: React.FC<QuestionInspectorProps> = ({ question, allQues
   React.useEffect(() => {
     logger.info(`QuestionInspector rendered for question ${question.query_id}`);
   }, [question.query_id]);
+
+  // Emit view_context to parent when filters/connectors change
+  React.useEffect(() => {
+    try {
+      onViewContextChange?.({
+        chunk_filters: chunkFilters,
+        gt_claim_filters: gtClaimFilters,
+        resp_claim_filters: respClaimFilters,
+        show_connectors: showConnectors,
+      });
+    } catch {}
+  }, [chunkFilters, gtClaimFilters, respClaimFilters, showConnectors]);
 
   const getWordDifference = () => {
     const responseWords = question.response.split(/\s+/).length;

@@ -6,6 +6,7 @@ import { isIrrelevantFromCounts } from '../utils/relevance';
 
 interface ChunkAnalysisProps {
   questions: Question[];
+  onViewContextChange?: (vc: any) => void;
 }
 
 interface ChunkInfo {
@@ -90,7 +91,7 @@ const ChunkTooltipCard: React.FC<{ chunk: EnhancedChunkData }> = ({ chunk }) => 
   );
 };
 
-const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
+const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions, onViewContextChange }) => {
   const [topN, setTopN] = useState<number>(20);
   const [selectedView, setSelectedView] = useState<'frequency' | 'length' | 'duplicates'>('frequency');
   const [analysisMode, setAnalysisMode] = useState<'retrieved2answer' | 'retrieved2response'>('retrieved2answer');
@@ -575,6 +576,34 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
     logger.info('Exported duplicate chunks CSV');
   };
 
+
+  // Emit view_context when selections/computed data change
+  React.useEffect(() => {
+    try {
+      const vc: any = {
+        selected_view: selectedView,
+        filters: {
+          analysis_mode: analysisMode,
+          sort_by: sortBy,
+          top_n: topN,
+          show_percent: showPercent,
+        }
+      };
+      if (selectedView === 'duplicates') {
+        const allIds = duplicateGroups.flatMap(g => g.chunks.map(c => c.doc_id)).filter(Boolean);
+        vc.duplicates = {
+          groups_count: duplicateGroups.length,
+          doc_ids: Array.from(new Set(allIds)),
+        };
+      } else if (selectedView === 'length') {
+        vc.length_hist = {
+          bins_count: lengthDistributionData.length,
+          bins: lengthDistributionData.map(b => ({ range: b.lengthRange, count: b.count, length: b.length }))
+        };
+      }
+      onViewContextChange?.(vc);
+    } catch {}
+  }, [selectedView, analysisMode, sortBy, topN, showPercent, duplicateGroups, lengthDistributionData]);
 
   return (
     <div className="p-6">
@@ -1179,9 +1208,9 @@ const ChunkAnalysisInner: React.FC<ChunkAnalysisProps> = ({ questions }) => {
   );
 };
 
-const ChunkAnalysis: React.FC<ChunkAnalysisProps> = ({ questions }) => {
+const ChunkAnalysis: React.FC<ChunkAnalysisProps> = ({ questions, onViewContextChange }) => {
   try {
-    return <ChunkAnalysisInner questions={questions} />;
+    return <ChunkAnalysisInner questions={questions} onViewContextChange={onViewContextChange} />;
   } catch (error) {
     console.error('ChunkAnalysis crashed:', error);
     return (

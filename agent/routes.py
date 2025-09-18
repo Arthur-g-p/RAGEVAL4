@@ -34,9 +34,21 @@ async def health_get():
 CURRENT_RUN: Optional[Dict[str, Any]] = None
 
 # - Request models -
+class ToolFunction(BaseModel):
+    name: str
+    arguments: str
+
+class ToolCall(BaseModel):
+    id: Optional[str] = None
+    type: Optional[str] = "function"
+    function: ToolFunction
+
 class ChatMessage(BaseModel):
-    role: str
-    content: str
+    role: str  # 'user' | 'assistant' | 'tool'
+    content: Optional[str] = None  # assistant tool_call may have null; tool content is a JSON string
+    tool_calls: Optional[List[ToolCall]] = None  # assistant-only
+    name: Optional[str] = None  # tool-only
+    tool_call_id: Optional[str] = None  # tool-only
 
 class SourceSpec(BaseModel):
     collection: str
@@ -46,10 +58,9 @@ class SourceSpec(BaseModel):
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     active_tab: Optional[str] = Field(default=None, description="overview | metrics | inspector | chunks")
-    selected_question_id: Optional[str] = None
     view_context: Optional[Dict[str, Any]] = None
-    # Preferred: file reference loaded via backend loader/cache
-    source: Optional[SourceSpec] = Field(default=None, description="Preferred: {collection, run_file, derived}")
+    run_data: Optional[Dict[str, Any]] = Field(default=None, description="Provide on first call or when run changes")
+    source: Optional[SourceSpec] = Field(default=None, description="Optional file reference: {collection, run_file, derived}")
 
 # Tool args
 class ToolCallArgs(BaseModel):
@@ -233,9 +244,9 @@ async def chat_stream(req: Request, body: ChatRequest):
     timeout_sec = float(os.getenv("LLM_TIMEOUT_SEC", "30"))
 
     logger.info(
-        f"[{request_id}] chat request: tab={body.active_tab} sel_qid={body.selected_question_id} "
+        f"[{request_id}] chat request: tab={body.active_tab} "
         f"msgs={len(body.messages) if body.messages else 0} view_keys={sorted(body.view_context.keys()) if body.view_context else []} "
-        f"source={'yes' if body.source is not None else 'no'}"
+        f"run_data={'yes' if body.run_data is not None else 'no'}"
     )
 
     if not api_key:
@@ -252,16 +263,34 @@ async def chat_stream(req: Request, body: ChatRequest):
             raise HTTPException(status_code=502, detail="Failed to fetch run from loader")
 
     # Build messages array
-    sys_prompt = build_prompt_for_tab(body.active_tab)
+    sys_prompt = build_prompt_for_tab(body.active_tab, body.view_context)
     logger.info(f"[{request_id}] === SYSTEM PROMPT ===\n{sys_prompt}")
     messages: List[Dict[str, Any]] = [{"role": "system", "content": sys_prompt}]
     last_user = None
     for m in body.messages:
-        if m.role in ("user", "assistant") and isinstance(m.content, str):
-            messages.append({"role": m.role, "content": m.content})
+        if m.role == "assistant" and m.tool_calls:
+            # Assistant tool_call message (content may be null)
+            tool_calls_payload = []
+            for tc in (m.tool_calls or []):
+                tool_calls_payload.append({
+                    "id": tc.id or "call_1",
+                    "type": tc.type or "function",
+                    "function": {"name": tc.function.name, "arguments": tc.function.arguments}
+                })
+            messages.append({"role": "assistant", "content": None, "tool_calls": tool_calls_payload})
+        elif m.role == "tool":
+            # Tool result message (content should be JSON string)
+            messages.append({
+                "role": "tool",
+                "name": m.name,
+                "tool_call_id": m.tool_call_id,
+                "content": m.content or ""
+            })
+        elif m.role in ("user", "assistant"):
+            messages.append({"role": m.role, "content": m.content or ""})
             if m.role == "user":
-                last_user = m.content
-    if last_user is not None:
+                last_user = m.content or ""
+    if last_user:
         logger.info(f"[{request_id}] === USER INPUT ===\n{last_user}")
 
     # Iterative tool-use loop: allow the model to call the tool up to 5 times before final answer
@@ -396,6 +425,7 @@ async def chat_stream(req: Request, body: ChatRequest):
                 api_key=api_key,
                 timeout=timeout_sec,
                 messages=messages,
+                tools=TOOLS,
                 tool_choice="none",
                 stream=True,
             )

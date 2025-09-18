@@ -42,6 +42,9 @@ export interface AgentUIContext {
   activeTab: AgentTab;
   selectedRun: RunData | null;
   selectedQuestion: Question | null;
+  metricsVisible?: string[]; // for metrics tab: currently visible metric keys
+  inspectorVC?: any; // for inspector tab: filters/connectors state
+  chunksVC?: any; // for chunks tab: filters, view-specific data
 }
 
 interface AgentChatProps {
@@ -83,32 +86,6 @@ const [open, setOpen] = useState<boolean>(false);
 
   // Observations removed per request
 
-  const contextSummary = useMemo(() => {
-    const run = ui.selectedRun;
-    const q = ui.selectedQuestion;
-    try {
-      const summary: any = {
-        activeTab: ui.activeTab,
-        run: run ? {
-          collection: (run as any).collection,
-          file_origin: (run as any).file_origin,
-          overall: run.metrics?.overall_metrics ?? {},
-        } : null,
-        question: q ? {
-          query_id: q.query_id,
-          metrics: q.metrics ?? {},
-          counts: {
-            chunks: Array.isArray(q.retrieved_context) ? q.retrieved_context.length : 0,
-            resp_claims: Array.isArray((q as any).response_claims) ? (q as any).response_claims.length : 0,
-            gt_claims: Array.isArray((q as any).gt_answer_claims) ? (q as any).gt_answer_claims.length : 0,
-          },
-        } : null
-      };
-      return summary;
-    } catch {
-      return { activeTab: ui.activeTab } as any;
-    }
-  }, [ui]);
 
   const currentSession = React.useMemo(() => sessions.find(s => s.id === currentSessionId)!, [sessions, currentSessionId]);
 
@@ -146,14 +123,6 @@ const [open, setOpen] = useState<boolean>(false);
     });
   };
 
-  const handleInsertContext = () => {
-    try {
-      const json = JSON.stringify(contextSummary, null, 2);
-      pushAssistant('Here is the current context summary:\n```json\n' + json + '\n```');
-    } catch {
-      pushAssistant('Unable to serialize context.');
-    }
-  };
 
   const getRunFileName = (): string => {
     try {
@@ -194,11 +163,27 @@ const [open, setOpen] = useState<boolean>(false);
       return null;
     }).filter(Boolean);
 
+    // Build view_context
+    let view_context: any = {};
+    if (ui.activeTab === 'metrics' && Array.isArray(ui.metricsVisible) && ui.metricsVisible.length > 0) {
+      view_context.metrics_visible = ui.metricsVisible;
+    }
+    if (ui.activeTab === 'inspector') {
+      view_context.subtab = 'inspector';
+      view_context.inspector = {
+        ...(ui.inspectorVC || {}),
+        question_id: ui.selectedQuestion?.query_id || null,
+        question_text: ui.selectedQuestion?.query || null,
+      };
+    }
+    if (ui.activeTab === 'chunks' && ui.chunksVC) {
+      view_context.chunks = ui.chunksVC;
+      view_context.subtab = 'chunks';
+    }
     const payload = {
       messages: (history as any[]).concat([{ role: 'user', content: userText }]),
       active_tab: ui.activeTab,
-      selected_question_id: ui.activeTab === 'inspector' && ui.selectedQuestion ? ui.selectedQuestion.query_id : null,
-      view_context: {},
+      view_context,
       source: {
         collection: run.collection || '',
         run_file: getRunFileName() || '',
@@ -600,14 +585,31 @@ const [open, setOpen] = useState<boolean>(false);
               {currentSession?.isStreaming && (
                 <button className="agent-btn" onClick={handleStop} title="Stop streaming">Stop</button>
               )}
-              <button className="agent-btn" onClick={handleInsertContext} title="Insert UI context snapshot (tab, run meta, selected question counts)">Context</button>
               <button className="agent-close" onClick={() => setOpen(false)} aria-label="Close">×</button>
             </div>
           </div>
           <div className="agent-toolbar">
             <span className="agent-chip" aria-label={`Active tab ${ui.activeTab}`}>Tab: {ui.activeTab}</span>
             {ui.activeTab === 'inspector' && ui.selectedQuestion && (
-              <span className="agent-chip">Q: {ui.selectedQuestion.query_id}</span>
+              <>
+                <span className="agent-chip">Q: {ui.selectedQuestion.query_id}</span>
+                <span className="agent-chip" title={ui.selectedQuestion.query}>
+                  “{(ui.selectedQuestion.query || '').slice(0, 28)}{(ui.selectedQuestion.query || '').length > 28 ? '…' : ''}”
+                </span>
+              </>
+            )}
+            {ui.activeTab === 'inspector' && ui.inspectorVC && (
+              <span className="agent-chip" title={`Inspector filters set`}>Filters: on</span>
+            )}
+            {ui.activeTab === 'metrics' && Array.isArray(ui.metricsVisible) && ui.metricsVisible.length > 0 && (
+              <span className="agent-chip" title={`Visible metrics: ${ui.metricsVisible.join(', ')}`}>Metrics: {ui.metricsVisible.slice(0,3).join(', ')}{ui.metricsVisible.length>3? '…':''}</span>
+            )}
+            {ui.activeTab === 'chunks' && ui.chunksVC && (
+              <span className="agent-chip" title={`Chunks ${ui.chunksVC.selected_view}`}>
+                {ui.chunksVC.selected_view === 'duplicates' && `Chunks: duplicates (${ui.chunksVC?.duplicates?.groups_count ?? 0})`}
+                {ui.chunksVC.selected_view === 'length' && `Chunks: length (${ui.chunksVC?.length_hist?.bins_count ?? 0} bins)`}
+                {ui.chunksVC.selected_view === 'frequency' && `Chunks: frequency (top ${ui.chunksVC?.filters?.top_n ?? ''})`}
+              </span>
             )}
           </div>
 

@@ -14,6 +14,9 @@ function App() {
   const [selectedRun, setSelectedRun] = useState<RunData | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [selectedQuestionId, setSelectedQuestionId] = useState<string | null>(null);
+  const [metricsVisible, setMetricsVisible] = useState<string[]>([]);
+  const [inspectorVC, setInspectorVC] = useState<any>(null);
+  const [chunksVC, setChunksVC] = useState<any>(null);
 
   const handleRunLoaded = (run: RunData) => {
     logger.info(`Run loaded: ${run.collection} - ${run.file_origin}`);
@@ -79,6 +82,7 @@ function App() {
               <MetricsByQuestion
                 questions={selectedRun.results}
                 onSelectQuestion={handleSelectQuestion}
+                onVisibleMetricsChange={setMetricsVisible}
               />
             )}
             {activeTab === 'inspector' && (
@@ -87,6 +91,7 @@ function App() {
                   question={selectedQuestion} 
                   allQuestions={selectedRun.results}
                   onSelectQuestion={setSelectedQuestionId}
+                  onViewContextChange={(vc) => setInspectorVC(vc)}
                 />
               ) : (
                 <div className="p-6 text-center">
@@ -98,7 +103,9 @@ function App() {
                 </div>
               )
             )}
-            {activeTab === 'chunks' && <ChunkAnalysis questions={selectedRun.results} />}
+            {activeTab === 'chunks' && (
+              <ChunkAnalysis questions={selectedRun.results} onViewContextChange={(vc) => setChunksVC(vc)} />
+            )}
           </div>
         </div>
       ) : (
@@ -114,7 +121,7 @@ function App() {
         </div>
       )}
       {/* Agent chat floating widget */}
-      <AgentChat ui={{ activeTab, selectedRun, selectedQuestion: selectedQuestion ?? null }} />
+      <AgentChat ui={{ activeTab, selectedRun, selectedQuestion: selectedQuestion ?? null, metricsVisible, inspectorVC, chunksVC }} />
     </div>
   );
 }

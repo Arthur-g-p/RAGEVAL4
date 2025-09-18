@@ -7,6 +7,7 @@ import { logger } from '../utils/logger';
 interface MetricsByQuestionProps {
   questions: Question[];
   onSelectQuestion: (queryId: string) => void;
+  onVisibleMetricsChange?: (visible: string[]) => void;
 }
 
 const DEFAULT_VISIBLE_METRICS = [
@@ -20,7 +21,7 @@ const METRIC_COLORS = [
   '#3B82F6', '#EF4444', '#10B981', '#F59E0B', '#8B5CF6', '#F97316'
 ];
 
-const MetricsByQuestion: React.FC<MetricsByQuestionProps> = ({ questions, onSelectQuestion }) => {
+const MetricsByQuestion: React.FC<MetricsByQuestionProps> = ({ questions, onSelectQuestion, onVisibleMetricsChange }) => {
   const [visibleMetrics, setVisibleMetrics] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -31,6 +32,11 @@ const MetricsByQuestion: React.FC<MetricsByQuestionProps> = ({ questions, onSele
     } catch {}
     return new Set(DEFAULT_VISIBLE_METRICS);
   });
+
+  // Notify parent on mount and when selection changes
+  React.useEffect(() => {
+    try { onVisibleMetricsChange?.(Array.from(visibleMetrics)); } catch {}
+  }, []);
 
   React.useEffect(() => {
     logger.info('MetricsByQuestion rendered successfully');
@@ -70,6 +76,7 @@ const MetricsByQuestion: React.FC<MetricsByQuestionProps> = ({ questions, onSele
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(visibleMetrics)));
     } catch {}
+    try { onVisibleMetricsChange?.(Array.from(visibleMetrics)); } catch {}
   }, [visibleMetrics]);
 
   React.useEffect(() => {
