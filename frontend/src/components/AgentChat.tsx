@@ -48,11 +48,16 @@ interface AgentChatProps {
   ui: AgentUIContext;
 }
 
+interface ToolFunctionCall { id: string; type: 'function'; function: { name: string; arguments: string } }
 interface ChatMessage {
   id: string;
-  role: 'system' | 'user' | 'assistant';
-  raw: string; // plain text content
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  raw: string; // plain text content (for assistant/user)
   html: string; // formatted HTML for display
+  // OpenAI-style fields for tool calls/results
+  tool_calls?: ToolFunctionCall[]; // assistant tool_call message
+  name?: string; // tool name for role='tool'
+  tool_call_id?: string; // tool result linkage
 }
 
 const uniqueId = (() => {
@@ -64,97 +69,19 @@ const uniqueId = (() => {
 
 const AgentChat: React.FC<AgentChatProps> = ({ ui }) => {
 const [open, setOpen] = useState<boolean>(false);
-  type ChatSession = { id: string; title: string; messages: ChatMessage[]; isStreaming: boolean };
+  type ChatSession = { id: string; title: string; messages: ChatMessage[]; isStreaming: boolean; currentStreamId?: string };
   const [sessions, setSessions] = useState<ChatSession[]>(() => [{
     id: 's-1',
     title: 'Session 1',
     isStreaming: false,
-    messages: [{ id: 'm-0', role: 'system', raw: 'Agent ready. Share context or ask a question.', html: formatToHtml('Agent ready. Share context or ask a question.') }]
+    currentStreamId: undefined,
+    messages: []
   }]);
   const [currentSessionId, setCurrentSessionId] = useState<string>('s-1');
   const controllersRef = React.useRef<Map<string, AbortController>>(new Map());
   const [draft, setDraft] = useState<string>('');
 
-  // Small, cheap observations based on current UI
-  const observations = useMemo(() => {
-    const out: string[] = [];
-    try {
-      if (!ui?.selectedRun) return out;
-      const run = ui.selectedRun;
-
-      if (ui.activeTab === 'overview') {
-        const f1 = run.metrics?.overall_metrics?.f1 ?? 0;
-        const prec = run.metrics?.overall_metrics?.precision ?? 0;
-        const rec = run.metrics?.overall_metrics?.recall ?? 0;
-        if (f1 < 0.5) out.push(`Overall F1 is ${f1.toFixed(3)} (< 0.5)`);
-        if ((run.metrics?.generator_metrics?.hallucination ?? 0) > 0.25) {
-          out.push(`Hallucination ~ ${(run.metrics!.generator_metrics!.hallucination * 100).toFixed(0)}%`);
-        }
-        out.push(`Precision ${Math.round(prec * 100)}%, Recall ${Math.round(rec * 100)}%`);
-      }
-
-      if (ui.activeTab === 'metrics') {
-        const qs = Array.isArray(run.results) ? run.results : [];
-        const withF1 = qs.map(q => ({ qid: q.query_id, f1: Number(q.metrics?.f1 ?? 0) }))
-          .sort((a, b) => a.f1 - b.f1);
-        if (withF1.length > 0) {
-          const worst = withF1[0];
-          const best = withF1[withF1.length - 1];
-          out.push(`Worst by F1: ${worst.qid} (${worst.f1.toFixed(2)})`);
-          out.push(`Best by F1: ${best.qid} (${best.f1.toFixed(2)})`);
-        }
-      }
-
-      if (ui.activeTab === 'inspector' && ui.selectedQuestion) {
-        const q: any = ui.selectedQuestion as any;
-        // Count response-claim contradictions if answer2response present
-        let respContr = 0;
-        try {
-          const arr = Array.isArray(q.answer2response) ? q.answer2response : [];
-          for (const item of arr) {
-            const rel = Array.isArray(item) ? item[0] : item;
-            if (String(rel || '').toLowerCase() === 'contradiction') respContr += 1;
-          }
-        } catch {}
-        if (respContr > 0) out.push(`Response contradictions vs GT: ${respContr}`);
-
-        // Chunk → response contradictions via retrieved2response
-        let chunkRespContr = 0;
-        try {
-          const r2r: any[] = Array.isArray(q.retrieved2response) ? q.retrieved2response : [];
-          const chunkCount = Array.isArray(q.retrieved_context) ? q.retrieved_context.length : 0;
-          const respCount = Array.isArray(q.response_claims) ? q.response_claims.length : 0;
-          for (let i = 0; i < chunkCount; i++) {
-            for (let j = 0; j < respCount; j++) {
-              const rel = relationAt(r2r, i, j, chunkCount, respCount);
-              if (String(rel || '').toLowerCase() === 'contradiction') chunkRespContr += 1;
-            }
-          }
-        } catch {}
-        if (chunkRespContr > 0) out.push(`Chunk↔Response contradictions: ${chunkRespContr}`);
-      }
-
-      if (ui.activeTab === 'chunks') {
-        // Simple read of contradictions from effectiveness_analysis
-        const qs = Array.isArray(ui.selectedRun.results) ? ui.selectedRun.results : [];
-        let topContrDoc: string | null = null;
-        let topContr = 0;
-        for (const qq of qs) {
-          if (!Array.isArray(qq.retrieved_context)) continue;
-          for (const c of qq.retrieved_context) {
-            const v = Number(c?.effectiveness_analysis?.gt_contradictions ?? 0)
-              + Number(c?.effectiveness_analysis?.response_contradictions ?? 0);
-            if (v > topContr) {
-              topContr = v;
-              topContrDoc = String(c?.doc_id ?? 'unknown');
-            }
-          }
-        }
-        if (topContr > 0 && topContrDoc) out.push(`Most contradictions at: ${topContrDoc} (${topContr})`);
-      }
-    } catch {}
-    return out;
-  }, [ui]);
+  // Observations removed per request
 
   const contextSummary = useMemo(() => {
     const run = ui.selectedRun;
@@ -175,14 +102,13 @@ const [open, setOpen] = useState<boolean>(false);
             resp_claims: Array.isArray((q as any).response_claims) ? (q as any).response_claims.length : 0,
             gt_claims: Array.isArray((q as any).gt_answer_claims) ? (q as any).gt_answer_claims.length : 0,
           },
-        } : null,
-        observations,
+        } : null
       };
       return summary;
     } catch {
-      return { activeTab: ui.activeTab, observations } as any;
+      return { activeTab: ui.activeTab } as any;
     }
-  }, [ui, observations]);
+  }, [ui]);
 
   const currentSession = React.useMemo(() => sessions.find(s => s.id === currentSessionId)!, [sessions, currentSessionId]);
 
@@ -248,12 +174,28 @@ const [open, setOpen] = useState<boolean>(false);
     controllersRef.current.set(currentSessionId, controller);
     updateCurrentSession(s => ({ ...s, isStreaming: true }));
 
-    // Build conversation history
-    const history = currentSession.messages
-      .filter(m => m.role === 'user' || m.role === 'assistant')
-      .map(m => ({ role: m.role, content: m.raw }));
+    // Build conversation history (include tool calls/results)
+    const history = currentSession.messages.map((m) => {
+      if (m.role === 'user') return { role: 'user', content: m.raw } as any;
+      if (m.role === 'assistant') {
+        const base: any = { role: 'assistant' };
+        if (m.tool_calls) {
+          base.tool_calls = m.tool_calls;
+          base.content = null;
+        } else {
+          base.content = m.raw;
+        }
+        return base;
+      }
+      if (m.role === 'tool') {
+        // Pass through tool message to reduce recomputation
+        return { role: 'tool', name: m.name || 'dataset_query', content: m.raw, tool_call_id: m.tool_call_id } as any;
+      }
+      return null;
+    }).filter(Boolean);
+
     const payload = {
-      messages: history.concat([{ role: 'user', content: userText }]),
+      messages: (history as any[]).concat([{ role: 'user', content: userText }]),
       active_tab: ui.activeTab,
       selected_question_id: ui.activeTab === 'inspector' && ui.selectedQuestion ? ui.selectedQuestion.query_id : null,
       view_context: {},
@@ -277,7 +219,8 @@ const [open, setOpen] = useState<boolean>(false);
     const streamMsgId = uniqueId();
     updateCurrentSession(s => ({
       ...s,
-      messages: s.messages.concat({ id: streamMsgId, role: 'assistant', raw: '', html: '' })
+      currentStreamId: streamMsgId,
+      messages: s.messages.concat({ id: streamMsgId, role: 'assistant', raw: '', html: '', tool_calls: undefined })
     }));
 
     const primaryUrl = 'http://127.0.0.1:8000/agent/chat/stream';
@@ -330,7 +273,75 @@ const [open, setOpen] = useState<boolean>(false);
       let buffer = '';
       let done = false;
       let accumulated = '';
+      let sawFinalContent = false;
       console.groupCollapsed('AgentChat ◀ SSE stream');
+      const flushEvent = (evName: string | null, dataStr: string) => {
+        if (dataStr === '[DONE]') { done = true; return; }
+        try { console.debug('SSE parsed event', { evName, dataStr }); } catch {}
+        if (evName === 'tool_call') {
+          // Assistant tool-call message
+          try {
+            const obj = JSON.parse(dataStr);
+            const toolCalls: ToolFunctionCall[] = Array.isArray(obj?.tool_calls) ? obj.tool_calls : (obj?.assistant_tool_msg?.tool_calls || []);
+            setSessions(prev => prev.map(s => {
+              if (s.id !== currentSessionId) return s;
+              const msgs = s.messages.slice();
+              msgs.push({ id: uniqueId(), role: 'assistant', raw: '', html: '', tool_calls: toolCalls });
+              return { ...s, messages: msgs };
+            }));
+          } catch (e) {
+            try { console.warn('Bad tool_call payload', e, dataStr); } catch {}
+          }
+          return;
+        }
+        if (evName === 'tool_result') {
+          // Tool role message (result or error)
+          try {
+            const obj = JSON.parse(dataStr);
+            // Expect shape similar to backend tool message; allow minimal
+            const name = obj?.name || 'dataset_query';
+            const content = typeof obj?.content === 'string' ? obj.content : JSON.stringify(obj?.content ?? obj);
+            const tool_call_id = obj?.tool_call_id || obj?.id || undefined;
+            setSessions(prev => prev.map(s => {
+              if (s.id !== currentSessionId) return s;
+              const msgs = s.messages.slice();
+              msgs.push({ id: uniqueId(), role: 'tool', raw: content, html: formatToHtml(content), name, tool_call_id });
+              return { ...s, messages: msgs };
+            }));
+          } catch (e) {
+            try { console.warn('Bad tool_result payload', e, dataStr); } catch {}
+          }
+          return;
+        }
+        if (evName === 'done') { done = true; return; }
+        // Default: final answer token
+        let deltaText = '';
+        try {
+          const obj = JSON.parse(dataStr);
+          if (obj?.delta?.content) deltaText = String(obj.delta.content);
+          else if (typeof obj?.content === 'string') deltaText = obj.content;
+          else if (typeof obj?.message === 'string') deltaText = obj.message;
+          else if (typeof obj === 'string') deltaText = obj;
+        } catch {
+          deltaText = dataStr;
+        }
+        if (deltaText) {
+          sawFinalContent = true;
+          accumulated += deltaText;
+          setSessions(prev => prev.map(s => {
+            if (s.id !== currentSessionId) return s;
+            const msgs = s.messages.slice();
+            const idxMsg = msgs.findIndex(m => m.id === streamMsgId);
+            if (idxMsg >= 0) {
+              const m = msgs[idxMsg];
+              const newRaw = (m.raw || '') + deltaText;
+              msgs[idxMsg] = { ...m, raw: newRaw, html: formatToHtml(newRaw) };
+            }
+            return { ...s, messages: msgs };
+          }));
+        }
+      };
+
       while (!done) {
         const { value, done: readerDone } = await reader.read();
         if (readerDone) break;
@@ -343,39 +354,15 @@ const [open, setOpen] = useState<boolean>(false);
           buffer = buffer.slice(idx + 2);
           try { console.debug('SSE event chunk:', eventChunk); } catch {}
           const lines = eventChunk.split('\n');
+          let evName: string | null = null;
+          let dataLines: string[] = [];
           for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || !trimmed.startsWith('data:')) continue;
-            const data = trimmed.slice(5).trim();
-            if (!data) continue;
-            if (data === '[DONE]') { done = true; break; }
-            let deltaText = '';
-            try {
-              const obj = JSON.parse(data);
-              if (obj?.delta?.content) deltaText = String(obj.delta.content);
-              else if (typeof obj?.content === 'string') deltaText = obj.content;
-              else if (typeof obj?.message === 'string') deltaText = obj.message;
-              else if (typeof obj === 'string') deltaText = obj;
-              try { console.debug('SSE parsed data:', obj); } catch {}
-            } catch {
-              deltaText = data;
-            }
-            if (deltaText) {
-              accumulated += deltaText;
-              // append delta to streaming message
-              setSessions(prev => prev.map(s => {
-                if (s.id !== currentSessionId) return s;
-                const msgs = s.messages.slice();
-                const idxMsg = msgs.findIndex(m => m.id === streamMsgId);
-                if (idxMsg >= 0) {
-                  const m = msgs[idxMsg];
-                  const newRaw = (m.raw || '') + deltaText;
-                  msgs[idxMsg] = { ...m, raw: newRaw, html: formatToHtml(newRaw) };
-                }
-                return { ...s, messages: msgs };
-              }));
-            }
+            if (!line.trim()) continue;
+            if (line.startsWith('event:')) { evName = line.slice(6).trim(); continue; }
+            if (line.startsWith('data:')) { dataLines.push(line.slice(5).trim()); continue; }
           }
+          const dataStr = dataLines.join('\n');
+          flushEvent(evName, dataStr);
         }
       }
       console.groupEnd();
@@ -390,7 +377,19 @@ const [open, setOpen] = useState<boolean>(false);
         }
       } catch {}
     } finally {
-      updateCurrentSession(s => ({ ...s, isStreaming: false }));
+      // Move the streaming assistant message to the end so final prose is at the bottom
+      const sid = currentSessionId;
+      const mid = streamMsgId;
+      setSessions(prev => prev.map(s => {
+        if (s.id !== sid) return s;
+        const msgs = s.messages.slice();
+        const i = msgs.findIndex(m => m.id === mid);
+        if (i >= 0 && i !== msgs.length - 1) {
+          const [m] = msgs.splice(i, 1);
+          msgs.push(m);
+        }
+        return { ...s, isStreaming: false, currentStreamId: undefined, messages: msgs };
+      }));
       controllersRef.current.delete(currentSessionId);
     }
   };
@@ -520,15 +519,32 @@ const [open, setOpen] = useState<boolean>(false);
 
   const suggestedQuestions = useMemo(() => {
     const s: string[] = [];
-    if (heuristics.harmfulTop.length > 0) s.push('Show top 5 harmful retrieval chunks (GT contradictions) and where they appear.');
-    if (heuristics.missedOpp.length > 0) s.push('List missed opportunities: chunks entailing GT but not used by response.');
-    if (heuristics.overReliance.length > 0) s.push('Are we over-relying on irrelevant chunks? Show chunks used by response but neutral to GT.');
-    if (heuristics.duplicateGroups.length > 0) s.push('Summarize duplicate chunk groups (same text across doc_ids) with examples.');
-    if (heuristics.metricOutliers.worstByF1.length > 0) s.push('Which questions are the worst by F1, precision, and recall?');
-    if (heuristics.perQuestionFlags.lengthGaps.length > 0) s.push('Flag questions with large response vs GT length gaps and inspect one.');
-    if (heuristics.perQuestionFlags.lowUtilization.length > 0) s.push('Find questions with many chunks but low context utilization.');
+    const tab = ui.activeTab;
+    if (tab === 'overview') {
+      if (heuristics.metricOutliers.worstByF1.length > 0) s.push('Give me a brief overview of top metric outliers (precision/recall/f1) in this run.');
+      if (heuristics.harmfulTop.length > 0 || heuristics.missedOpp.length > 0 || heuristics.duplicateGroups.length > 0) {
+        s.push('Summarize the top issues at a glance (harmful retrieval, missed opportunities, duplicates).');
+      }
+    } else if (tab === 'metrics') {
+      if (heuristics.metricOutliers.worstByF1.length > 0) s.push('List the 3 questions with lowest F1.');
+      if (heuristics.metricOutliers.worstByPrecision.length > 0) s.push('Show the 3 questions with lowest precision.');
+      if (heuristics.metricOutliers.worstByRecall.length > 0) s.push('Show the 3 questions with lowest recall.');
+    } else if (tab === 'inspector') {
+      if (ui.selectedQuestion) {
+        s.push('For this question, show chunks contradicting the ground truth.');
+        s.push('For this question, list relevant but unused chunks (missed opportunities).');
+        s.push('For this question, list response claims not supported by any chunk.');
+      } else {
+        s.push('Select a question to analyze, then ask about harmful or missed-opportunity chunks.');
+      }
+    } else if (tab === 'chunks') {
+      if (heuristics.harmfulTop.length > 0) s.push('List top 5 harmful chunks (GT contradictions) and where they appear.');
+      if (heuristics.missedOpp.length > 0) s.push('List chunks that entail GT but were not used by the response.');
+      if (heuristics.duplicateGroups.length > 0) s.push('Summarize duplicate chunk groups with examples.');
+      if (heuristics.overReliance.length > 0) s.push('Show chunks used by the response that are neutral to GT (possible over-reliance).');
+    }
     return s;
-  }, [heuristics]);
+  }, [heuristics, ui.activeTab, ui.selectedQuestion]);
 
   return (
     <>
@@ -574,7 +590,8 @@ const [open, setOpen] = useState<boolean>(false);
                     id,
                     title: `Session ${n}`,
                     isStreaming: false,
-                    messages: [{ id: uniqueId(), role: 'system', raw: 'Agent ready. Share context or ask a question.', html: formatToHtml('Agent ready. Share context or ask a question.') }]
+                    currentStreamId: undefined,
+                    messages: []
                   }]));
                   setCurrentSessionId(id);
                 }}
@@ -596,40 +613,77 @@ const [open, setOpen] = useState<boolean>(false);
 
           <div className="agent-body">
             {/* Observations banner */}
-            {observations.length > 0 && (
-              <div className="agent-observations" aria-live="polite">
-                <div className="agent-ob-title">Observations</div>
-                <ul className="agent-ob-list">
-                  {observations.map((o, i) => (
-                    <li key={`ob-${i}`}>• {o}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
             {suggestedQuestions.length > 0 && (
               <div className="agent-suggestions" aria-live="polite">
                 <div className="agent-ob-title">Ask me:</div>
                 <div className="agent-suggestion-list">
                   {suggestedQuestions.map((q, i) => (
-                    <button key={`sugg-${i}`} className="agent-suggestion-btn" onClick={() => pushUser(q)}>{q}</button>
+                    <button key={`sugg-${i}`} className="agent-suggestion-btn" onClick={() => setDraft(q)}>{q}</button>
                   ))}
                 </div>
               </div>
             )}
 
             <div className="agent-messages">
-              {currentSession?.messages.map((m) => (
-                <div key={`${currentSession.id}-${m.id}`} className={`agent-msg agent-${m.role}`}>
-                  <div className="agent-msg-bubble" dangerouslySetInnerHTML={{ __html: m.html }} />
-                </div>
-              ))}
+              {currentSession?.messages.map((m, i) => {
+                // Render tool steps as compact chips
+                if (m.role === 'tool' || (m.role === 'assistant' && m.tool_calls)) {
+                  // Build chip text
+                  if (m.role === 'assistant' && m.tool_calls) {
+                    // Assistant tool-call
+                    const tc = m.tool_calls[0];
+                    let argsPretty = '';
+                    try { const obj = JSON.parse(tc.function.arguments || '{}'); argsPretty = obj.expr ? String(obj.expr).slice(0, 80) : ''; } catch {}
+                    const label = `${tc.function.name || 'tool'} call`;
+                    return (
+                      <div key={`${currentSession.id}-${m.id}`} className="agent-tool-steps">
+                        <span className="agent-tool-chip loading" title={argsPretty ? `expr: ${argsPretty}` : 'tool call'}>{label}<span className="meta"> loading…</span></span>
+                      </div>
+                    );
+                  }
+                  if (m.role === 'tool') {
+                    // Tool result
+                    let statusClass = 'ok';
+                    let title = '';
+                    try {
+                      const obj = JSON.parse(m.raw || '{}');
+                      if (obj.error) { statusClass = 'err'; title = String(obj.error); }
+                      else {
+                        let rows = 0;
+                        if (Array.isArray(obj.result)) rows = obj.result.length;
+                        else if (obj.result && typeof obj.result === 'object') rows = Object.keys(obj.result).length;
+                        const flags: string[] = [];
+                        if (obj.truncated) flags.push('truncated');
+                        if (obj.char_truncated) flags.push('char_truncated');
+                        title = `rows=${rows}${flags.length? ' • ' + flags.join(', ') : ''}`;
+                      }
+                    } catch { title = 'tool result'; }
+                    const label = `${m.name || 'tool'} result`;
+                    return (
+                      <div key={`${currentSession.id}-${m.id}`} className="agent-tool-steps">
+                        <span className={`agent-tool-chip ${statusClass}`} title={title}>{label}</span>
+                      </div>
+                    );
+                  }
+                }
+                // Regular bubbles
+                return (
+                  <div key={`${currentSession.id}-${m.id}`} className={`agent-msg agent-${m.role}`}>
+                    <div className="agent-msg-bubble" dangerouslySetInnerHTML={{ __html: m.html }} />
+                  </div>
+                );
+              })}
             </div>
+            {currentSession?.isStreaming && (
+              <div className="agent-tool-steps" aria-live="polite">
+                <span className="agent-tool-chip loading">Computing…</span>
+              </div>
+            )}
           </div>
           <div className="agent-footer">
             <textarea
               className="agent-input"
-              placeholder="Type a message. Supports **bold**, *italic*, `code`, and ``` blocks."
+placeholder="Ask a question or request calculations."
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
@@ -637,7 +691,14 @@ const [open, setOpen] = useState<boolean>(false);
               }}
               rows={2}
             />
-            <button className="agent-send" onClick={handleSend}>Send</button>
+            {currentSession?.isStreaming ? (
+              <button className="agent-send" disabled>
+                <span className="agent-spinner" aria-hidden="true"></span>
+                <span style={{ marginLeft: 6 }}>Loading…</span>
+              </button>
+            ) : (
+              <button className="agent-send" onClick={handleSend}>Send</button>
+            )}
           </div>
         </div>
       )}

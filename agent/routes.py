@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.get("/health")
-async def health():
+async def health_get():
     model = os.getenv("LLM_NAME") or ""
     return {"ok": True, "model": model, "has_run": CURRENT_RUN is not None}
 
@@ -48,8 +48,8 @@ class ChatRequest(BaseModel):
     active_tab: Optional[str] = Field(default=None, description="overview | metrics | inspector | chunks")
     selected_question_id: Optional[str] = None
     view_context: Optional[Dict[str, Any]] = None
-    run_data: Optional[Dict[str, Any]] = Field(default=None, description="Provide on first call or when run changes")
-    source: Optional[SourceSpec] = Field(default=None, description="Optional file reference: {collection, run_file, derived}")
+    # Preferred: file reference loaded via backend loader/cache
+    source: Optional[SourceSpec] = Field(default=None, description="Preferred: {collection, run_file, derived}")
 
 # Tool args
 class ToolCallArgs(BaseModel):
@@ -64,10 +64,12 @@ TOOLS = [
         "function": {
             "name": "dataset_query",
             "description": (
-                "Evaluate a pure Python expression over the current run. Read-only.\n"
+                "Evaluate ONE pure Python expression over the current run (read-only).\n"
                 "Variables: data (enhanced run), questions (data['results'] list).\n"
-                "Allowed builtins: len,sum,min,max,sorted,any,all,set,list,dict,tuple,enumerate,range.\n"
-                "Return small results; slice or use limit."
+                "Allowed builtins: len,sum,min,max,sorted,any,all,set,list,dict,tuple,enumerate,range,type,isinstance,str,int,float.\n"
+                "Rules: SINGLE expression only; no assignments, no semicolons, no newlines. Use dict/list literals and comprehensions.\n"
+                "Examples: [q['query_id'] for q in questions][:5] | {'n': len(questions)} | [ {'query_id': q.get('query_id')} for q in questions ]\n"
+                "Keep results small; use 'limit' and 'char_limit'."
             ),
             "parameters": {
                 "type": "object",
@@ -83,6 +85,7 @@ TOOLS = [
     }
 ]
 
+
 ALLOWED_BUILTINS = {
     "len": len,
     "sum": sum,
@@ -97,6 +100,16 @@ ALLOWED_BUILTINS = {
     "tuple": tuple,
     "enumerate": enumerate,
     "range": range,
+    # allow simple inspection/conversion helpers
+    "type": type,
+    "isinstance": isinstance,
+    "str": str,
+    "int": int,
+    "float": float,
+    "isinstance": isinstance,
+    "str": str,
+    "int": int,
+    "float": float,
 }
 
 async def _eval_expr(expr: str, ctx: Dict[str, Any], timeout_ms: int = 400) -> Any:
@@ -151,6 +164,17 @@ def _truncate_strings(value: Any, char_limit: Optional[int]) -> (Any, bool):
         return new_dict, truncated_any
     return value, False
 
+def _prevalidate_expr(expr: str) -> Optional[str]:
+    # Disallow obvious non-expression forms: assignments, semicolons, newlines
+    if ';' in expr:
+        return "Only a single expression is allowed. Do not use semicolons."
+    if '\n' in expr:
+        return "Only a single expression is allowed. Do not use newlines."
+    # crude check for assignment '=' not part of comparisons
+    if '=' in expr and '==' not in expr and '>=' not in expr and '<=' not in expr and '!=' not in expr:
+        return "Only a single expression is allowed. Do not use assignments (e.g., no q=...)."
+    return None
+
 async def _run_dataset_query(expr: str, limit: Optional[int], char_limit: Optional[int]) -> Dict[str, Any]:
     if CURRENT_RUN is None:
         raise HTTPException(status_code=400, detail="No run loaded. Include run_data in the request once after loading a run.")
@@ -179,6 +203,17 @@ async def _run_dataset_query(expr: str, limit: Optional[int], char_limit: Option
     return {"result": value, "truncated": list_truncated, "char_truncated": char_truncated}
 
 
+async def _fetch_run_via_loader(src: SourceSpec, timeout_sec: float, request_id: str) -> Dict[str, Any]:
+    """Fetch run via existing backend loader endpoint, honoring derived flag."""
+    url = f"http://127.0.0.1:8000/collections/{src.collection}/runs/{src.run_file}"
+    if src.derived:
+        url += "?derived=true"
+    logger.info(f"[{request_id}] Agent: fetching run via loader {url}")
+    async with httpx.AsyncClient(timeout=timeout_sec) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        return resp.json()
+
 @router.post("/chat/stream")
 async def chat_stream(req: Request, body: ChatRequest):
     global CURRENT_RUN
@@ -200,28 +235,18 @@ async def chat_stream(req: Request, body: ChatRequest):
     logger.info(
         f"[{request_id}] chat request: tab={body.active_tab} sel_qid={body.selected_question_id} "
         f"msgs={len(body.messages) if body.messages else 0} view_keys={sorted(body.view_context.keys()) if body.view_context else []} "
-        f"run_data={'yes' if body.run_data is not None else 'no'}"
+        f"source={'yes' if body.source is not None else 'no'}"
     )
 
     if not api_key:
         raise HTTPException(status_code=400, detail="Missing LLM_PROVIDER_API_KEY in environment")
 
-    # Update current run: prefer explicit run_data; otherwise use source to fetch from backend loader
-    if body.run_data is not None:
-        CURRENT_RUN = body.run_data
-        logger.info(f"[{request_id}] Agent: current run cached from run_data")
-    elif body.source is not None:
+    # Update current run: fetch via source using backend loader/cache
+    if body.source is not None:
         src = body.source
-        url = f"http://127.0.0.1:8000/collections/{src.collection}/runs/{src.run_file}"
-        if src.derived:
-            url = url + "?derived=true"
-        logger.info(f"[{request_id}] Agent: fetching run via loader {url}")
         try:
-            async with httpx.AsyncClient(timeout=timeout_sec) as client:
-                resp = await client.get(url)
-                resp.raise_for_status()
-                CURRENT_RUN = resp.json()
-                logger.info(f"[{request_id}] Agent: loaded run from loader (derived={src.derived})")
+            CURRENT_RUN = await _fetch_run_via_loader(src, timeout_sec, request_id)
+            logger.info(f"[{request_id}] Agent: loaded run from loader (derived={src.derived})")
         except Exception as e:
             logger.error(f"[{request_id}] Agent: failed to load run from loader: {e}")
             raise HTTPException(status_code=502, detail="Failed to fetch run from loader")
@@ -247,7 +272,9 @@ async def chat_stream(req: Request, body: ChatRequest):
         tool_steps = 0
         tool_used = False
         tool_call_id: Optional[str] = None
-        while tool_steps < MAX_STEPS:
+        MAX_STEPS = 10
+        extra_grace_used = False
+        while tool_steps < (MAX_STEPS + (1 if extra_grace_used else 0)):
             # Non-stream call with tools enabled
             try:
                 resp = await acompletion(
@@ -309,18 +336,40 @@ async def chat_stream(req: Request, body: ChatRequest):
                 ]
             }
             messages.append(assistant_tool_msg)
+            # Stream tool_call to client for persistence
+            yield f"event: tool_call\ndata: {json.dumps(assistant_tool_msg, ensure_ascii=False)}\n\n".encode("utf-8")
 
-            # Execute dataset_query
+            # Execute dataset_query (with prevalidation)
+            bad = _prevalidate_expr(tool_args.expr)
+            if bad:
+                err_msg = {"error": bad, "hint": "Write ONE expression: no assignments/semicolons/newlines."}
+                logger.error(f"[{request_id}] === TOOL ERROR (step {tool_steps+1}) ===\n{bad}")
+                tool_msg_err = {"role": "tool", "name": "dataset_query", "content": json.dumps(err_msg, ensure_ascii=False)}
+                if tool_call_id:
+                    tool_msg_err["tool_call_id"] = tool_call_id
+                messages.append(tool_msg_err)
+                yield f"event: tool_result\ndata: {json.dumps(tool_msg_err, ensure_ascii=False)}\n\n".encode("utf-8")
+                if not extra_grace_used:
+                    extra_grace_used = True
+                tool_steps += 1
+                continue
             try:
-                logger.info(f"[{request_id}] === TOOL EXECUTE (step {tool_steps+1}) ===\nexpr={tool_args.expr}\nlimit={tool_args.limit}")
-                logger.info(f"[{request_id}] char_limit={tool_args.char_limit}")
+                logger.info(f"[{request_id}] === TOOL INPUT (step {tool_steps+1}) ===\nexpr={tool_args.expr}\nlimit={tool_args.limit}\nchar_limit={tool_args.char_limit}")
                 tool_result = await _run_dataset_query(tool_args.expr, tool_args.limit, tool_args.char_limit)
-                logger.info(f"[{request_id}] === TOOL RESULT (step {tool_steps+1}) ===\n{json.dumps(tool_result, ensure_ascii=False)}")
+                logger.info(f"[{request_id}] === TOOL OUTPUT (step {tool_steps+1}) ===\n{json.dumps(tool_result, ensure_ascii=False)}")
             except Exception as e:
-                err = f"dataset_query failed: {e}"
-                logger.error(f"[{request_id}] [DATASET-QUERY-ERROR] {err}")
-                yield f"data: {json.dumps({"error": err})}\n\n".encode("utf-8")
-                return
+                # Create an error tool result instead of failing the whole request
+                err_msg = {"error": str(e), "hint": "Ensure a single expression; avoid assignments/semicolons/newlines."}
+                logger.error(f"[{request_id}] === TOOL ERROR (step {tool_steps+1}) ===\n{str(e)}")
+                tool_msg_err = {"role": "tool", "name": "dataset_query", "content": json.dumps(err_msg, ensure_ascii=False)}
+                if tool_call_id:
+                    tool_msg_err["tool_call_id"] = tool_call_id
+                messages.append(tool_msg_err)
+                yield f"event: tool_result\ndata: {json.dumps(tool_msg_err, ensure_ascii=False)}\n\n".encode("utf-8")
+                if not extra_grace_used:
+                    extra_grace_used = True
+                tool_steps += 1
+                continue
 
             # Append tool result message
             tool_msg = {
@@ -331,6 +380,8 @@ async def chat_stream(req: Request, body: ChatRequest):
             if tool_call_id:
                 tool_msg["tool_call_id"] = tool_call_id
             messages.append(tool_msg)
+            # Stream tool_result to client
+            yield f"event: tool_result\ndata: {json.dumps(tool_msg, ensure_ascii=False)}\n\n".encode("utf-8")
 
             tool_used = True
             tool_steps += 1
@@ -338,42 +389,7 @@ async def chat_stream(req: Request, body: ChatRequest):
         # === FINAL STREAM ===
         try:
             logger.info(f"[{request_id}] final: streaming answer (tool_choice=none)")
-            stream = await acompletion(
-                model=model,
-                api_base=api_base,
-                api_key=api_key,
-                timeout=timeout_sec,
-                messages=messages,
-                tool_choice="none",
-                stream=True,
-            )
-        except Exception as e:
-            logger.error(f"[{request_id}] [FINAL-STREAM-ERROR] {e}")
-            yield f"data: {json.dumps({"error": "Final LLM call failed"})}\n\n".encode("utf-8")
-            return
-
-        final_text_parts: List[str] = []
-        try:
-            async for chunk in stream:
-                delta = chunk.choices[0].delta
-                text = getattr(delta, "content", None)
-                if text:
-                    final_text_parts.append(text)
-                    yield f"data: {json.dumps({"content": text})}\n\n".encode("utf-8")
-        except Exception as e:
-            logger.error(f"[{request_id}] [STREAM-EMIT-ERROR] {e}")
-        finally:
-            final_text = "".join(final_text_parts)
-            logger.info(f"[{request_id}] === FINAL ANSWER ===\n{final_text}")
-            yield b"event: done\ndata: {}\n\n"
-
-    return StreamingResponse(sse_generator(), media_type="text/event-stream")
-            tool_used = True
-            tool_steps += 1
-
-        # === FINAL STREAM ===
-        try:
-            logger.info(f"[{request_id}] final: streaming answer (tool_choice=none)")
+            # tool_choice="none" explicitly disables new tool calls during final answer
             stream = await acompletion(
                 model=model,
                 api_base=api_base,
