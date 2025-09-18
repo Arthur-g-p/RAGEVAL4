@@ -140,8 +140,15 @@ const RunSelector: React.FC<RunSelectorProps> = ({ onRunLoaded }) => {
       
       const enhancedRunData = await deriveResponse.json();
 
+      // Attach metadata so downstream components (e.g., AgentChat) can reference source
+      const withMeta = {
+        ...enhancedRunData,
+        collection: selectedCollection,
+        file_origin: selectedRun,
+      } as any;
+
       setLoadingDetails('Finalizing...');
-      onRunLoaded(enhancedRunData);
+      onRunLoaded(withMeta);
       logger.info(`Successfully loaded run: ${selectedCollection}/${selectedRun} (${runData.results.length} questions)`);
       
     } catch (error) {

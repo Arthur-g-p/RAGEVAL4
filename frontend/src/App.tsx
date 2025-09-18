@@ -6,6 +6,7 @@ import RunOverview from './components/RunOverview';
 import MetricsByQuestion from './components/MetricsByQuestion';
 import QuestionInspector from './components/QuestionInspector';
 import ChunkAnalysis from './components/ChunkAnalysis';
+import AgentChat from './components/AgentChat';
 
 type TabType = 'overview' | 'metrics' | 'inspector' | 'chunks';
 
@@ -112,6 +113,8 @@ function App() {
           </div>
         </div>
       )}
+      {/* Agent chat floating widget */}
+      <AgentChat ui={{ activeTab, selectedRun, selectedQuestion: selectedQuestion ?? null }} />
     </div>
   );
 }

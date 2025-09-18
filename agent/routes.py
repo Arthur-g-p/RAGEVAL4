@@ -7,6 +7,7 @@ import logging
 import os
 import uuid
 from typing import Any, Dict, Iterable, Optional, List
+import httpx
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -14,20 +15,33 @@ from pydantic import BaseModel, Field
 
 try:
     from litellm import acompletion  # async
-except Exception as e:  # pragma: no cover
+except Exception:  # pragma: no cover
     acompletion = None
+
+# Simple tab->prompt mapping
+from .prompt_map import build_prompt_for_tab
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+@router.get("/health")
+async def health():
+    model = os.getenv("LLM_NAME") or ""
+    return {"ok": True, "model": model, "has_run": CURRENT_RUN is not None}
+
 # In-memory current run (single-user)
 CURRENT_RUN: Optional[Dict[str, Any]] = None
 
-# ---------------------- Request models ----------------------
+# - Request models -
 class ChatMessage(BaseModel):
     role: str
     content: str
+
+class SourceSpec(BaseModel):
+    collection: str
+    run_file: str
+    derived: Optional[bool] = Field(default=True)
 
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
@@ -35,11 +49,13 @@ class ChatRequest(BaseModel):
     selected_question_id: Optional[str] = None
     view_context: Optional[Dict[str, Any]] = None
     run_data: Optional[Dict[str, Any]] = Field(default=None, description="Provide on first call or when run changes")
+    source: Optional[SourceSpec] = Field(default=None, description="Optional file reference: {collection, run_file, derived}")
 
 # Tool args
 class ToolCallArgs(BaseModel):
     expr: str
     limit: Optional[int] = Field(default=50, ge=1, le=200)
+    char_limit: Optional[int] = Field(default=None, ge=1, description="Optional max characters per string in result; omit to disable char truncation.")
 
 # OpenAI-style tools schema for dataset_query
 TOOLS = [
@@ -57,7 +73,8 @@ TOOLS = [
                 "type": "object",
                 "properties": {
                     "expr": {"type": "string", "description": "Python expression returning JSON-serializable value."},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 200}
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+                    "char_limit": {"type": "integer", "minimum": 1, "description": "Optional max characters per string in result; omit to disable char truncation."}
                 },
                 "required": ["expr"],
                 "additionalProperties": False
@@ -65,21 +82,6 @@ TOOLS = [
         }
     }
 ]
-
-BASE_SYSTEM_PROMPT = (
-    "You are a read-only analysis agent for a RAG evaluation run. "
-    "You have exactly one tool: dataset_query, which evaluates a Python expression over the dataset. "
-    "Do not invent data. Do not modify anything. "
-    "Use the tool when you need concrete values; keep results small. "
-    "Stream only your final answer tokens; never stream tool inputs/outputs."
-)
-
-TAB_HINTS = {
-    "overview": "User is on Overview. Prioritize explaining high-level metrics and trends.",
-    "metrics": "User is on Metrics. Focus on per-question comparisons, worst/best by metric.",
-    "inspector": "User is on Inspector. Prefer details for the selected question and claim-level relations.",
-    "chunks": "User is on Chunks. Focus on chunk frequency, entailments/contradictions, and duplicates.",
-}
 
 ALLOWED_BUILTINS = {
     "len": len,
@@ -96,13 +98,6 @@ ALLOWED_BUILTINS = {
     "enumerate": enumerate,
     "range": range,
 }
-
-def _trunc(val: Optional[str], n: int = 200) -> str:
-    try:
-        s = str(val) if val is not None else ""
-        return s if len(s) <= n else s[:n] + "…"
-    except Exception:
-        return ""
 
 async def _eval_expr(expr: str, ctx: Dict[str, Any], timeout_ms: int = 400) -> Any:
     loop = asyncio.get_event_loop()
@@ -125,7 +120,38 @@ def _normalize_questions(run: Dict[str, Any]) -> List[Dict[str, Any]]:
     return results
 
 
-async def _run_dataset_query(expr: str, limit: Optional[int]) -> Dict[str, Any]:
+def _truncate_strings(value: Any, char_limit: Optional[int]) -> (Any, bool):
+    if char_limit is None:
+        return value, False
+    truncated_any = False
+    if isinstance(value, str):
+        if len(value) > char_limit:
+            return value[:char_limit], True
+        return value, False
+    if isinstance(value, list):
+        new_list = []
+        for item in value:
+            new_item, t = _truncate_strings(item, char_limit)
+            truncated_any = truncated_any or t
+            new_list.append(new_item)
+        return new_list, truncated_any
+    if isinstance(value, tuple):
+        new_items = []
+        for item in value:
+            new_item, t = _truncate_strings(item, char_limit)
+            truncated_any = truncated_any or t
+            new_items.append(new_item)
+        return tuple(new_items), truncated_any
+    if isinstance(value, dict):
+        new_dict = {}
+        for k, v in value.items():
+            new_v, t = _truncate_strings(v, char_limit)
+            truncated_any = truncated_any or t
+            new_dict[k] = new_v
+        return new_dict, truncated_any
+    return value, False
+
+async def _run_dataset_query(expr: str, limit: Optional[int], char_limit: Optional[int]) -> Dict[str, Any]:
     if CURRENT_RUN is None:
         raise HTTPException(status_code=400, detail="No run loaded. Include run_data in the request once after loading a run.")
     questions = _normalize_questions(CURRENT_RUN)
@@ -133,10 +159,13 @@ async def _run_dataset_query(expr: str, limit: Optional[int]) -> Dict[str, Any]:
 
     value = await _eval_expr(expr, ctx, timeout_ms=400)
 
-    truncated = False
+    list_truncated = False
     if isinstance(value, list) and limit is not None and len(value) > limit:
         value = value[:limit]
-        truncated = True
+        list_truncated = True
+
+    # Optional char-level truncation
+    value, char_truncated = _truncate_strings(value, char_limit)
 
     # Ensure JSON serializable
     try:
@@ -147,21 +176,7 @@ async def _run_dataset_query(expr: str, limit: Optional[int]) -> Dict[str, Any]:
         else:
             value = str(value)
 
-    return {"result": value, "truncated": truncated}
-
-
-def _build_system_prompt(active_tab: Optional[str], selected_question_id: Optional[str], view_context: Optional[Dict[str, Any]]) -> str:
-    parts = [BASE_SYSTEM_PROMPT]
-    if active_tab:
-        parts.append(TAB_HINTS.get(active_tab, f"User tab: {active_tab}."))
-    if selected_question_id:
-        parts.append(f"Selected question id: {selected_question_id}.")
-    if view_context:
-        # Keep it short to avoid token bloat; include only keys
-        keys = ", ".join(sorted(view_context.keys()))
-        if keys:
-            parts.append(f"View context keys: {keys}.")
-    return "\n".join(parts)
+    return {"result": value, "truncated": list_truncated, "char_truncated": char_truncated}
 
 
 @router.post("/chat/stream")
@@ -191,15 +206,30 @@ async def chat_stream(req: Request, body: ChatRequest):
     if not api_key:
         raise HTTPException(status_code=400, detail="Missing LLM_PROVIDER_API_KEY in environment")
 
-    # Update current run if provided
+    # Update current run: prefer explicit run_data; otherwise use source to fetch from backend loader
     if body.run_data is not None:
         CURRENT_RUN = body.run_data
-        logger.info("Agent: current run cached in memory for this process")
+        logger.info(f"[{request_id}] Agent: current run cached from run_data")
+    elif body.source is not None:
+        src = body.source
+        url = f"http://127.0.0.1:8000/collections/{src.collection}/runs/{src.run_file}"
+        if src.derived:
+            url = url + "?derived=true"
+        logger.info(f"[{request_id}] Agent: fetching run via loader {url}")
+        try:
+            async with httpx.AsyncClient(timeout=timeout_sec) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                CURRENT_RUN = resp.json()
+                logger.info(f"[{request_id}] Agent: loaded run from loader (derived={src.derived})")
+        except Exception as e:
+            logger.error(f"[{request_id}] Agent: failed to load run from loader: {e}")
+            raise HTTPException(status_code=502, detail="Failed to fetch run from loader")
 
     # Build messages array
-    sys_prompt = _build_system_prompt(body.active_tab, body.selected_question_id, body.view_context)
+    sys_prompt = build_prompt_for_tab(body.active_tab)
     logger.info(f"[{request_id}] === SYSTEM PROMPT ===\n{sys_prompt}")
-    messages: List[Dict[str, str]] = [{"role": "system", "content": sys_prompt}]
+    messages: List[Dict[str, Any]] = [{"role": "system", "content": sys_prompt}]
     last_user = None
     for m in body.messages:
         if m.role in ("user", "assistant") and isinstance(m.content, str):
@@ -283,7 +313,8 @@ async def chat_stream(req: Request, body: ChatRequest):
             # Execute dataset_query
             try:
                 logger.info(f"[{request_id}] === TOOL EXECUTE (step {tool_steps+1}) ===\nexpr={tool_args.expr}\nlimit={tool_args.limit}")
-                tool_result = await _run_dataset_query(tool_args.expr, tool_args.limit)
+                logger.info(f"[{request_id}] char_limit={tool_args.char_limit}")
+                tool_result = await _run_dataset_query(tool_args.expr, tool_args.limit, tool_args.char_limit)
                 logger.info(f"[{request_id}] === TOOL RESULT (step {tool_steps+1}) ===\n{json.dumps(tool_result, ensure_ascii=False)}")
             except Exception as e:
                 err = f"dataset_query failed: {e}"
@@ -301,6 +332,42 @@ async def chat_stream(req: Request, body: ChatRequest):
                 tool_msg["tool_call_id"] = tool_call_id
             messages.append(tool_msg)
 
+            tool_used = True
+            tool_steps += 1
+
+        # === FINAL STREAM ===
+        try:
+            logger.info(f"[{request_id}] final: streaming answer (tool_choice=none)")
+            stream = await acompletion(
+                model=model,
+                api_base=api_base,
+                api_key=api_key,
+                timeout=timeout_sec,
+                messages=messages,
+                tool_choice="none",
+                stream=True,
+            )
+        except Exception as e:
+            logger.error(f"[{request_id}] [FINAL-STREAM-ERROR] {e}")
+            yield f"data: {json.dumps({"error": "Final LLM call failed"})}\n\n".encode("utf-8")
+            return
+
+        final_text_parts: List[str] = []
+        try:
+            async for chunk in stream:
+                delta = chunk.choices[0].delta
+                text = getattr(delta, "content", None)
+                if text:
+                    final_text_parts.append(text)
+                    yield f"data: {json.dumps({"content": text})}\n\n".encode("utf-8")
+        except Exception as e:
+            logger.error(f"[{request_id}] [STREAM-EMIT-ERROR] {e}")
+        finally:
+            final_text = "".join(final_text_parts)
+            logger.info(f"[{request_id}] === FINAL ANSWER ===\n{final_text}")
+            yield b"event: done\ndata: {}\n\n"
+
+    return StreamingResponse(sse_generator(), media_type="text/event-stream")
             tool_used = True
             tool_steps += 1
 

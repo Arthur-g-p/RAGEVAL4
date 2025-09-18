@@ -279,3 +279,46 @@ code {
 .qi-highlight { outline: 2px solid #0ea5e9; outline-offset: 2px; border-radius: 6px; transition: outline-color 0.15s ease-in-out; }
 .qi-bullet-dot { display:inline-block; width:8px; height:8px; border-radius:9999px; background-color:#16a34a; margin-right:8px; transform: translateY(-1px); }
 .qi-num-badge { display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:9999px; background-color:#eef2f7; color:#374151; font-size:11px; font-weight:600; border:1px solid #e5e7eb; }
+
+/* Agent Chat styles */
+.agent-fab { position: fixed; right: 20px; bottom: 20px; width: 52px; height: 52px; border-radius: 9999px; background: #2563eb; color: white; border: none; box-shadow: 0 8px 20px rgba(0,0,0,0.15); display:flex; align-items:center; justify-content:center; z-index: 1000; cursor: pointer; }
+.agent-fab:hover { background: #1e40af; }
+
+.agent-window { position: fixed; right: 20px; bottom: 84px; width: 380px; max-height: 70vh; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 12px 30px rgba(0,0,0,0.18); display: flex; flex-direction: column; overflow: hidden; z-index: 1000; }
+.agent-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; }
+.agent-title { font-weight: 700; color: #111827; }
+.agent-actions { display: flex; align-items: center; gap: 8px; }
+.agent-btn { background: white; border: 1px solid #d1d5db; color: #374151; padding: 4px 8px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+.agent-btn:hover { background: #f3f4f6; }
+.agent-close { background: transparent; border: none; font-size: 18px; line-height: 1; cursor: pointer; color: #6b7280; }
+.agent-close:hover { color: #111827; }
+
+.agent-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; border-bottom: 1px solid #f3f4f6; background: #fff; }
+.agent-chip { font-size: 12px; background: #eef2f7; color: #374151; padding: 2px 8px; border-radius: 9999px; border: 1px solid #e5e7eb; }
+.agent-suggestions { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; }
+.agent-suggestion-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.agent-suggestion-btn { background: #ffffff; color: #374151; border: 1px solid #d1d5db; border-radius: 14px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+.agent-suggestion-btn:hover { background: #f3f4f6; }
+
+.agent-body { padding: 8px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+.agent-observations { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px; }
+.agent-ob-title { font-size: 12px; font-weight: 700; color: #374151; margin-bottom: 4px; }
+.agent-ob-list { margin: 0; padding-left: 12px; color: #374151; font-size: 12px; }
+
+.agent-messages { flex: 1; overflow: auto; display:flex; flex-direction: column; gap: 8px; padding-right: 2px; }
+.agent-msg { display:flex; }
+.agent-msg-bubble { max-width: 85%; padding: 8px 10px; border-radius: 10px; border: 1px solid #e5e7eb; background: #fff; color: #111827; font-size: 13px; line-height: 1.35; }
+.agent-system .agent-msg-bubble { background: #f9fafb; color: #374151; }
+.agent-user { justify-content: flex-end; }
+.agent-user .agent-msg-bubble { background: #2563eb; color: #fff; border-color: #1e40af; }
+.agent-assistant .agent-msg-bubble { background: #ffffff; }
+
+.agent-footer { display: flex; align-items: flex-end; gap: 8px; padding: 8px; border-top: 1px solid #e5e7eb; background: #fff; }
+.agent-input { flex: 1; resize: none; border: 1px solid #d1d5db; border-radius: 8px; padding: 8px; font-size: 13px; color: #111827; }
+.agent-input:focus { outline: none; box-shadow: 0 0 0 3px rgba(59,130,246,0.35); border-color: #60a5fa; }
+.agent-send { background: #10b981; color: #fff; border: none; border-radius: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer; }
+.agent-send:hover { background: #059669; }
+
+/* Code formatting */
+.agent-pre { background: #0b1021; color: #e6edf3; padding: 10px; border-radius: 8px; overflow:auto; border:1px solid #0f172a; }
+.agent-code { background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 4px; padding: 0 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; }

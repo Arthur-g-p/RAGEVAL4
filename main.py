@@ -1,8 +1,10 @@
 import logging
 import json
 import os
+import copy
+from collections import OrderedDict
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -15,6 +17,16 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+# Suppress noisy third-party logs
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("litellm").setLevel(logging.WARNING)
+# Suppress noisy third-party logs
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("litellm").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # Load environment variables from .env if present (project root)
@@ -41,6 +53,51 @@ except Exception as e:
     logger.warning(f"Agent routes not mounted: {e}")
 
 COLLECTIONS_DIR = Path("collections")
+
+# Simple in-memory LRU caches for runs (raw and derived)
+RUN_CACHE_SIZE = 3
+_RUN_CACHE_RAW: "OrderedDict[Tuple[str, str], Dict[str, Any]]" = OrderedDict()
+_RUN_CACHE_DERIVED: "OrderedDict[Tuple[str, str], Dict[str, Any]]" = OrderedDict()
+
+def _cache_get(cache: "OrderedDict[Tuple[str, str], Dict[str, Any]]", key: Tuple[str, str]):
+    if key in cache:
+        val = cache.pop(key)
+        cache[key] = val
+        return val
+    return None
+
+def _cache_set(cache: "OrderedDict[Tuple[str, str], Dict[str, Any]]", key: Tuple[str, str], value: Dict[str, Any]):
+    cache[key] = value
+    while len(cache) > RUN_CACHE_SIZE:
+        cache.popitem(last=False)
+
+# Path safety helpers
+_DEF_ERR = "Invalid path"
+
+def _is_simple_name(s: str) -> bool:
+    # Allow simple names without separators or traversal
+    if not s:
+        return False
+    if ".." in s:
+        return False
+    if any(ch in s for ch in ("/", "\\", ":")):
+        return False
+    return True
+
+def _safe_run_path(collection: str, run_file: str) -> Path:
+    if not _is_simple_name(collection) or not _is_simple_name(run_file):
+        raise HTTPException(status_code=400, detail=_DEF_ERR)
+    if not run_file.lower().endswith(".json"):
+        raise HTTPException(status_code=400, detail="Only .json run files are allowed")
+    base = (COLLECTIONS_DIR / collection).resolve()
+    target = (base / run_file).resolve()
+    try:
+        common = os.path.commonpath([str(base), str(target)])
+    except Exception:
+        raise HTTPException(status_code=400, detail=_DEF_ERR)
+    if common != str(base):
+        raise HTTPException(status_code=400, detail=_DEF_ERR)
+    return target
 
 @app.get("/")
 async def root():
@@ -70,21 +127,41 @@ async def get_collections():
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/collections/{collection}/runs/{run_file}")
-async def get_run(collection: str, run_file: str):
-    """Get a specific run JSON file."""
+async def get_run(collection: str, run_file: str, derived: bool = False):
+    """Get a specific run JSON file. With derived=true, returns a cached enriched version."""
     try:
+        key = (collection, run_file)
+        if derived:
+            cached = _cache_get(_RUN_CACHE_DERIVED, key)
+            if cached is not None:
+                logger.info(f"Cache hit (derived): {collection}/{run_file}")
+                return cached
+        else:
+            cached = _cache_get(_RUN_CACHE_RAW, key)
+            if cached is not None:
+                logger.info(f"Cache hit (raw): {collection}/{run_file}")
+                return cached
+
         logger.info(f"Loading run: {collection}/{run_file}")
-        run_path = COLLECTIONS_DIR / collection / run_file
-        
+        run_path = _safe_run_path(collection, run_file)
         if not run_path.exists():
             logger.error(f"Run file not found: {run_path}")
             raise HTTPException(status_code=404, detail="Run file not found")
-        
+
         with open(run_path, 'r', encoding='utf-8') as f:
-            run_data = json.load(f)
-        
-        logger.info(f"Successfully loaded run: {collection}/{run_file}")
-        return run_data
+            raw_run = json.load(f)
+        _cache_set(_RUN_CACHE_RAW, key, raw_run)
+
+        if derived:
+            # Work on a deep copy to keep raw cache pristine
+            run_copy = json.loads(json.dumps(raw_run))
+            enriched = compute_derived_metrics(run_copy)
+            _cache_set(_RUN_CACHE_DERIVED, key, enriched)
+            logger.info(f"Successfully loaded + derived: {collection}/{run_file}")
+            return enriched
+        else:
+            logger.info(f"Successfully loaded run: {collection}/{run_file}")
+            return raw_run
     except json.JSONDecodeError as e:
         logger.error(f"Invalid JSON in run file {collection}/{run_file}: {str(e)}")
         raise HTTPException(status_code=400, detail="Invalid JSON file")
@@ -299,59 +376,64 @@ def build_chunk_effectiveness_lookup(questions: List[Dict]) -> Dict[str, Any]:
     
     return chunk_lookup
 
+def compute_derived_metrics(run_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Compute and attach derived metrics to the run_data (in-place) and return it."""
+    logger.info("Computing derived metrics...")
+
+    # Handle both direct results and nested results structure
+    questions = run_data.get("results", [])
+    if isinstance(questions, dict) and "results" in questions:
+        questions = questions["results"]
+
+    # Calculate chunk effectiveness analysis using modular functions
+    chunk_effectiveness_lookup = build_chunk_effectiveness_lookup(questions)
+
+    # Add derived metrics for each question
+    for question in questions:
+        if "retrieved_context" in question:
+            # Calculate context length in words
+            context_text = " ".join([chunk["text"] for chunk in question["retrieved_context"]])
+            question["context_length"] = len(context_text.split())
+            question["num_chunks"] = len(question["retrieved_context"])
+
+            # Get local entailment analysis for this question
+            local_relations = analyze_local_chunk_relations(question)
+            logger.info(f"Question {question.get('query_id')}: Created local analysis for {len(local_relations)} chunks")
+
+            # Add effectiveness analysis to each chunk
+            for chunk_idx, chunk in enumerate(question["retrieved_context"]):
+                chunk_key = f"{chunk['doc_id']}::{chunk['text']}"
+
+                # Add global effectiveness analysis
+                if chunk_key in chunk_effectiveness_lookup:
+                    chunk["effectiveness_analysis"] = chunk_effectiveness_lookup[chunk_key]
+
+                # Add local analysis for this question - FORCE IT
+                if chunk_idx in local_relations:
+                    chunk["local_analysis"] = local_relations[chunk_idx]
+                    logger.info(f"Chunk {chunk_idx}: Added local analysis {chunk['local_analysis']}")
+                else:
+                    chunk["local_analysis"] = {
+                        "local_gt_entailments": 0,
+                        "local_gt_neutrals": 0,
+                        "local_gt_contradictions": 0,
+                        "local_gt_total": 0,
+                        "local_response_entailments": 0,
+                        "local_response_neutrals": 0,
+                        "local_response_contradictions": 0,
+                        "local_response_total": 0
+                    }
+                    logger.warning(f"Chunk {chunk_idx}: NO local relations found, using zeros")
+
+    logger.info("Successfully computed derived metrics with chunk effectiveness analysis")
+    return run_data
+
 @app.post("/derive")
 async def derive_metrics(run_data: Dict[str, Any]):
     """Add derived metrics to run data."""
     try:
-        logger.info("Computing derived metrics...")
-        
-        # Handle both direct results and nested results structure
-        questions = run_data.get("results", [])
-        if isinstance(questions, dict) and "results" in questions:
-            questions = questions["results"]
-        
-        # Calculate chunk effectiveness analysis using modular functions
-        chunk_effectiveness_lookup = build_chunk_effectiveness_lookup(questions)
-        
-        # Add derived metrics for each question
-        for question in questions:
-            if "retrieved_context" in question:
-                # Calculate context length in words
-                context_text = " ".join([chunk["text"] for chunk in question["retrieved_context"]])
-                question["context_length"] = len(context_text.split())
-                question["num_chunks"] = len(question["retrieved_context"])
-                
-                # Get local entailment analysis for this question
-                local_relations = analyze_local_chunk_relations(question)
-                logger.info(f"Question {question.get('query_id')}: Created local analysis for {len(local_relations)} chunks")
-                
-                # Add effectiveness analysis to each chunk
-                for chunk_idx, chunk in enumerate(question["retrieved_context"]):
-                    chunk_key = f"{chunk['doc_id']}::{chunk['text']}"
-                    
-                    # Add global effectiveness analysis
-                    if chunk_key in chunk_effectiveness_lookup:
-                        chunk["effectiveness_analysis"] = chunk_effectiveness_lookup[chunk_key]
-                    
-                    # Add local analysis for this question - FORCE IT
-                    if chunk_idx in local_relations:
-                        chunk["local_analysis"] = local_relations[chunk_idx]
-                        logger.info(f"Chunk {chunk_idx}: Added local analysis {chunk['local_analysis']}")
-                    else:
-                        chunk["local_analysis"] = {
-                            "local_gt_entailments": 0,
-                            "local_gt_neutrals": 0,
-                            "local_gt_contradictions": 0,
-                            "local_gt_total": 0,
-                            "local_response_entailments": 0,
-                            "local_response_neutrals": 0,
-                            "local_response_contradictions": 0,
-                            "local_response_total": 0
-                        }
-                        logger.warning(f"Chunk {chunk_idx}: NO local relations found, using zeros")
-        
-        logger.info("Successfully computed derived metrics with chunk effectiveness analysis")
-        return run_data
+        result = compute_derived_metrics(run_data)
+        return result
     except Exception as e:
         logger.error(f"Error computing derived metrics: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
