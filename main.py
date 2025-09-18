@@ -1,9 +1,11 @@
 import logging
 import json
+import os
 from pathlib import Path
 from typing import List, Dict, Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
 
 # Set up logging
 logging.basicConfig(
@@ -15,6 +17,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Load environment variables from .env if present (project root)
+BASE_DIR = Path(__file__).resolve().parent
+load_dotenv(BASE_DIR / ".env")
+
 app = FastAPI(title="RAG-Debugger Backend", version="1.0.0")
 
 # Add CORS middleware
@@ -25,6 +31,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include agent routes
+try:
+    from agent.routes import router as agent_router
+    app.include_router(agent_router, prefix="/agent")
+    logger.info("Agent routes mounted at /agent")
+except Exception as e:
+    logger.warning(f"Agent routes not mounted: {e}")
 
 COLLECTIONS_DIR = Path("collections")
 
@@ -344,5 +358,7 @@ async def derive_metrics(run_data: Dict[str, Any]):
 
 if __name__ == "__main__":
     import uvicorn
-    logger.info("Starting FastAPI server...")
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    host = "127.0.0.1"
+    port = 8000
+    logger.info(f"Starting FastAPI server on http://{host}:{port}")
+    uvicorn.run("main:app", host=host, port=port, reload=True)
